@@ -110,9 +110,12 @@ export default function StoreEditPage() {
             Update the settings for this store.
           </CardDescription>
           {id && (
-            <div className="pt-2">
+            <div className="pt-2 flex gap-2">
               <Button variant="outline" asChild>
                 <Link href={`/dashboard/stores/${id}/customize`}>Customize storefront</Link>
+              </Button>
+              <Button variant="default" asChild>
+                <Link href={`/dashboard/stores/${id}/editor`}>Visual Editor (Puck)</Link>
               </Button>
             </div>
           )}

@@ -90,6 +90,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     router.push('/auth/login');
   };
 
+  // The Puck visual editor runs fullscreen — skip the dashboard shell
+  const isEditorRoute = pathname?.includes('/editor');
+  if (isEditorRoute) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Mobile sidebar */}

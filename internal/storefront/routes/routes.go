@@ -22,4 +22,5 @@ func Register(app *fiber.App) {
 	g.Get("/collections/:colSlug", h.GetCollectionProducts)
 	g.Get("/products", h.GetProducts)
 	g.Get("/products/:productSlug", h.GetProduct)
+	g.Post("/newsletter/subscribe", h.NewsletterSubscribe)
 }

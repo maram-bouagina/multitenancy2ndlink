@@ -59,10 +59,13 @@ func (r *collectionRepository) Update(col *models.Collection) error {
 
 func (r *collectionRepository) Delete(id, storeID uuid.UUID) error {
 	result := r.db.Where("id = ? AND store_id = ?", id, storeID).Delete(&models.Collection{})
+	if result.Error != nil {
+		return result.Error
+	}
 	if result.RowsAffected == 0 {
 		return errors.New("collection not found")
 	}
-	return result.Error
+	return nil
 }
 
 func (r *collectionRepository) AddProduct(collectionID, productID uuid.UUID) error {

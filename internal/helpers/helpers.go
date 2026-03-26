@@ -18,19 +18,24 @@ func ParseID(c *fiber.Ctx) (uuid.UUID, error) {
 	return id, err
 }
 
-// parseUserID extracts the user ID from the context locals
-func ParseUserID(c *fiber.Ctx) (uuid.UUID, error) {
-	userID, ok := c.Locals("userID").(string)
-	if !ok {
-		_ = c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "user not authenticated"})
-		return uuid.Nil, fiber.NewError(fiber.StatusUnauthorized, "user not authenticated")
-	}
-	id, err := uuid.Parse(userID)
-	if err != nil {
-		_ = c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid user id"})
-		return uuid.Nil, fiber.NewError(fiber.StatusUnauthorized, "invalid user id")
+// ParseStringID extracts the route param ":id" as a string (for non-UUID IDs like tenant IDs)
+func ParseStringID(c *fiber.Ctx) (string, error) {
+	id := c.Params("id")
+	if id == "" {
+		_ = c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing id"})
+		return "", fiber.NewError(fiber.StatusBadRequest, "missing id")
 	}
 	return id, nil
+}
+
+// parseUserID extracts the user ID from the context locals
+func ParseUserID(c *fiber.Ctx) (string, error) {
+	userID, ok := c.Locals("userID").(string)
+	if !ok || userID == "" {
+		_ = c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "user not authenticated"})
+		return "", fiber.NewError(fiber.StatusUnauthorized, "user not authenticated")
+	}
+	return userID, nil
 }
 
 // getTenantDB extracts the tenant DB from the context locals

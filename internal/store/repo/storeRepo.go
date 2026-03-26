@@ -10,56 +10,55 @@ import (
 )
 
 type StoreRepository interface {
-	Create(store *models.Store) error
-	FindByID(id uuid.UUID) (*models.Store, error)
-	FindByTenantID(tenantID uuid.UUID) ([]models.Store, error)
-	FindBySlug(slug string) (*models.Store, error)
-	Update(store *models.Store) error
-	Delete(id uuid.UUID) error
+	Create(db *gorm.DB, store *models.Store) error
+	FindByID(db *gorm.DB, id uuid.UUID) (*models.Store, error)
+	FindByTenantID(db *gorm.DB, tenantID string) ([]models.Store, error)
+	FindBySlug(db *gorm.DB, slug string) (*models.Store, error)
+	Update(db *gorm.DB, store *models.Store) error
+	Delete(db *gorm.DB, id uuid.UUID) error
 }
 
 type storeRepository struct {
-	db *gorm.DB
 }
 
-func NewStoreRepository(db *gorm.DB) StoreRepository {
-	return &storeRepository{db: db}
+func NewStoreRepository() StoreRepository {
+	return &storeRepository{}
 }
 
-func (r *storeRepository) Create(store *models.Store) error {
-	return r.db.Create(store).Error
+func (r *storeRepository) Create(db *gorm.DB, store *models.Store) error {
+	return db.Create(store).Error
 }
 
-func (r *storeRepository) FindByID(id uuid.UUID) (*models.Store, error) {
+func (r *storeRepository) FindByID(db *gorm.DB, id uuid.UUID) (*models.Store, error) {
 	var store models.Store
-	err := r.db.Where("id = ? AND deleted_at IS NULL", id).First(&store).Error
+	err := db.Where("id = ? AND deleted_at IS NULL", id).First(&store).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &store, err
 }
 
-func (r *storeRepository) FindByTenantID(tenantID uuid.UUID) ([]models.Store, error) {
+func (r *storeRepository) FindByTenantID(db *gorm.DB, tenantID string) ([]models.Store, error) {
 	var stores []models.Store
-	err := r.db.Where("tenant_id = ? AND deleted_at IS NULL", tenantID).Find(&stores).Error
+	err := db.Where("tenant_id = ? AND deleted_at IS NULL", tenantID).Find(&stores).Error
 	return stores, err
 }
 
-func (r *storeRepository) FindBySlug(slug string) (*models.Store, error) {
+func (r *storeRepository) FindBySlug(db *gorm.DB, slug string) (*models.Store, error) {
 	var store models.Store
-	err := r.db.Where("slug = ? AND deleted_at IS NULL", slug).First(&store).Error
+	err := db.Where("slug = ? AND deleted_at IS NULL", slug).First(&store).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &store, err
 }
 
-func (r *storeRepository) Update(store *models.Store) error {
-	return r.db.Save(store).Error
+func (r *storeRepository) Update(db *gorm.DB, store *models.Store) error {
+	return db.Save(store).Error
 }
 
-func (r *storeRepository) Delete(id uuid.UUID) error {
-	return r.db.Model(&models.Store{}).
+func (r *storeRepository) Delete(db *gorm.DB, id uuid.UUID) error {
+	return db.Model(&models.Store{}).
 		Where("id = ?", id).
 		Update("deleted_at", gorm.Expr("NOW()")).Error
 }

@@ -29,7 +29,13 @@ type ProductRelationResponse struct {
 
 // BulkProductRelationRequest représente une requête pour assigner plusieurs relations en masse
 type BulkProductRelationRequest struct {
-	Relations []CreateProductRelationRequest `json:"relations" validate:"required,dive"`
+	Relations []CreateProductRelationRequest `json:"relations" validate:"dive"`
+}
+
+// ProductRelationsResponse regroupe les relations d'un produit par type.
+type ProductRelationsResponse struct {
+	UpsellProducts    []ProductRelationResponse `json:"upsell_products,omitempty"`
+	CrossSellProducts []ProductRelationResponse `json:"cross_sell_products,omitempty"`
 }
 
 // ProductWithRelationsResponse représente un produit avec ses relations

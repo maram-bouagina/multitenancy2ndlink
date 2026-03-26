@@ -23,20 +23,35 @@ import {
   Settings,
   LogOut,
   User,
+  Users,
   BarChart3,
   ChevronDown,
+  Globe,
+  Check,
+  Database,
 } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/use-auth';
+import { useLanguage } from '@/lib/hooks/use-language';
+import { type Lang } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
-  { name: 'Stores', href: '/dashboard/stores', icon: Store },
-  { name: 'Products', href: '/dashboard/products', icon: Package },
-  { name: 'Categories', href: '/dashboard/categories', icon: FolderOpen },
-  { name: 'Collections', href: '/dashboard/collections', icon: FolderOpen },
-  { name: 'Tags', href: '/dashboard/tags', icon: Tag },
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+const NAV_ITEMS = [
+  { key: 'dashboard' as const, href: '/dashboard', icon: BarChart3 },
+  { key: 'stores' as const, href: '/dashboard/stores', icon: Store },
+  { key: 'products' as const, href: '/dashboard/products', icon: Package },
+  { key: 'categories' as const, href: '/dashboard/categories', icon: FolderOpen },
+  { key: 'collections' as const, href: '/dashboard/collections', icon: FolderOpen },
+  { key: 'tags' as const, href: '/dashboard/tags', icon: Tag },
+  { key: 'catalog' as const, href: '/dashboard/catalog', icon: Database },
+  { key: 'customers' as const, href: '/dashboard/customers', icon: Users },
+  { key: 'customerGroups' as const, href: '/dashboard/customer-groups', icon: Users },
+  { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
+];
+
+const LANG_OPTIONS: { code: Lang; flag: string; label: string }[] = [
+  { code: 'fr', flag: '🇫🇷', label: 'Français' },
+  { code: 'en', flag: '🇬🇧', label: 'English' },
+  { code: 'ar', flag: '🇸🇦', label: 'العربية' },
 ];
 
 interface DashboardLayoutProps {
@@ -48,13 +63,17 @@ interface NavItemsProps {
 }
 
 function NavItems({ pathname }: NavItemsProps) {
+  const { t } = useLanguage();
   return (
     <>
-      {navigation.map((item) => {
-        const isActive = pathname === item.href;
+      {NAV_ITEMS.map((item) => {
+        const isActive =
+          item.href === '/dashboard'
+            ? pathname === '/dashboard'
+            : pathname?.startsWith(item.href) ?? false;
         return (
           <Link
-            key={item.name}
+            key={item.href}
             href={item.href}
             className={cn(
               'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
@@ -64,7 +83,7 @@ function NavItems({ pathname }: NavItemsProps) {
             )}
           >
             <item.icon className="h-4 w-4" />
-            {item.name}
+            {t.nav[item.key]}
           </Link>
         );
       })}
@@ -76,6 +95,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, currentStore, stores, logout, setCurrentStore, isAuthenticated, isLoading } = useAuth();
+  const { t, lang, setLang, dir } = useLanguage();
+
+  useEffect(() => {
+    document.documentElement.dir = dir;
+    document.documentElement.lang = lang;
+  }, [dir, lang]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -103,13 +128,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <SheetTrigger asChild>
           <Button
             variant="ghost"
-            className="fixed top-4 left-4 z-40 md:hidden"
+            className="fixed top-4 inset-s-4 z-40 md:hidden"
             size="icon"
           >
             <Menu className="h-5 w-5" />
           </Button>
         </SheetTrigger>
-        <SheetContent side="left" className="w-64 p-0">
+        <SheetContent side={dir === 'rtl' ? 'right' : 'left'} className="w-64 p-0">
           <div className="flex h-full flex-col">
             <div className="flex h-14 items-center border-b px-4">
               <h2 className="text-lg font-semibold">Dashboard</h2>
@@ -122,12 +147,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </Sheet>
 
       {/* Desktop sidebar */}
-      <div className="hidden md:fixed md:inset-y-0 md:flex md:w-64 md:flex-col">
-        <div className="flex flex-col flex-grow border-r bg-white pt-5 pb-4 overflow-y-auto">
-          <div className="flex items-center flex-shrink-0 px-4">
-            <h1 className="text-xl font-bold text-gray-900">E-Commerce</h1>
+      <div className="hidden md:fixed md:inset-y-0 md:inset-s-0 md:flex md:w-64 md:flex-col">
+        <div className="flex flex-col grow border-r bg-white pt-5 pb-4 overflow-y-auto">
+          <div className="flex items-center shrink-0 px-4">
+            <h1 className="text-xl font-bold text-gray-900">{t.header.ecommerce}</h1>
           </div>
-          <div className="mt-8 flex-grow flex flex-col">
+          <div className="mt-8 grow flex flex-col">
             <nav className="flex-1 px-2 space-y-1">
               <NavItems pathname={pathname} />
             </nav>
@@ -136,9 +161,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       {/* Main content */}
-      <div className="md:pl-64">
+      <div className="md:ps-64">
         {/* Top header */}
-        <div className="sticky top-0 z-10 flex h-16 flex-shrink-0 border-b bg-white shadow">
+        <div className="sticky top-0 z-10 flex h-16 shrink-0 border-b bg-white shadow">
           <div className="flex flex-1 justify-between px-4 sm:px-6 lg:px-8">
             <div className="flex flex-1">
               <div className="flex w-full md:ml-0">
@@ -152,19 +177,19 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 </div>
               </div>
             </div>
-            <div className="ml-4 flex items-center md:ml-6">
+            <div className="ms-4 flex items-center md:ms-6">
               {/* Store Selector */}
               {currentStore && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="mr-4 flex items-center gap-2">
+                    <Button variant="ghost" className="me-4 flex items-center gap-2">
                       <Store className="h-4 w-4" />
                       <span className="hidden sm:inline">{currentStore.name}</span>
                       <ChevronDown className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Your Stores</DropdownMenuLabel>
+                    <DropdownMenuLabel>{t.header.yourStores}</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     {stores.map((store) => (
                       <DropdownMenuItem
@@ -172,7 +197,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                         onClick={() => setCurrentStore(store)}
                         className={store.id === currentStore.id ? 'bg-gray-100' : ''}
                       >
-                        <Store className="mr-2 h-4 w-4" />
+                        <Store className="me-2 h-4 w-4" />
                         {store.name}
                       </DropdownMenuItem>
                     ))}
@@ -180,13 +205,38 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 </DropdownMenu>
               )}
 
+              {/* Language Switcher */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="me-2 flex items-center gap-1.5">
+                    <Globe className="h-4 w-4" />
+                    <span className="hidden sm:inline text-xs font-semibold uppercase">{lang}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuLabel>{t.header.language}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {LANG_OPTIONS.map((l) => (
+                    <DropdownMenuItem
+                      key={l.code}
+                      onClick={() => setLang(l.code)}
+                      className="flex items-center gap-2"
+                    >
+                      <span>{l.flag}</span>
+                      <span>{l.label}</span>
+                      {lang === l.code && <Check className="ms-auto h-4 w-4 text-blue-600" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src="" alt="User" />
-                      <AvatarFallback>
-                        <User className="h-4 w-4" />
+                      <AvatarImage src={(user as { image?: string })?.image ?? ''} alt={user?.email ?? ''} />
+                      <AvatarFallback className="text-xs font-semibold">
+                        {`${(user?.firstName || '')[0] ?? ''}${(user?.lastName || '')[0] ?? ''}`.toUpperCase() || <User className="h-4 w-4" />}
                       </AvatarFallback>
                     </Avatar>
                   </Button>
@@ -194,25 +244,29 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 <DropdownMenuContent className="w-56" align="end" forceMount>
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">User</p>
+                      <p className="text-sm font-medium leading-none">{t.header.myAccount}</p>
                       <p className="text-xs leading-none text-muted-foreground">
                         {user?.email || 'user@example.com'}
                       </p>
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
-                    <User className="mr-2 h-4 w-4" />
-                    <span>Profile</span>
+                  <DropdownMenuItem asChild>
+                    <Link href="/dashboard/settings/profile">
+                      <User className="me-2 h-4 w-4" />
+                      <span>{t.header.profile}</span>
+                    </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Settings className="mr-2 h-4 w-4" />
-                    <span>Settings</span>
+                  <DropdownMenuItem asChild>
+                    <Link href="/dashboard/settings">
+                      <Settings className="me-2 h-4 w-4" />
+                      <span>{t.header.settings}</span>
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Log out</span>
+                    <LogOut className="me-2 h-4 w-4" />
+                    <span>{t.header.logout}</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

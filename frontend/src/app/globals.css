@@ -127,3 +127,18 @@
     @apply font-sans;
   }
 }
+
+/* Puck editor – ensure the canvas and sidebar panels fill the available height and scroll properly */
+.puck-Root {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.puck-Frame {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+}
+.puck-Root > div {
+  min-height: 0;
+}

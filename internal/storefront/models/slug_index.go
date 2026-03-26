@@ -8,7 +8,7 @@ import "github.com/google/uuid"
 // without scanning every tenant schema.
 type StoreSlugIndex struct {
 	Slug     string    `gorm:"type:varchar(255);primaryKey"              json:"-"`
-	TenantID uuid.UUID `gorm:"type:uuid;not null;index"                  json:"-"`
+	TenantID string    `gorm:"type:varchar(64);not null;index"            json:"-"`
 	StoreID  uuid.UUID `gorm:"type:uuid;not null"                        json:"-"`
 	Status   string    `gorm:"type:varchar(20);not null;default:'active'" json:"-"`
 }

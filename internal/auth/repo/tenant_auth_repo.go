@@ -3,7 +3,6 @@ package repo
 import (
 	"errors"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"multitenancypfe/internal/auth/models"
@@ -11,12 +10,12 @@ import (
 
 type TenantRepository interface {
 	Create(tenant *models.Tenant) error
-	FindByID(id uuid.UUID) (*models.Tenant, error)
+	FindByID(id string) (*models.Tenant, error)
 	FindByEmail(email string) (*models.Tenant, error)
 	FindAll() ([]models.Tenant, error)
 	Update(tenant *models.Tenant) error
-	Delete(id uuid.UUID) error
-	Restore(id uuid.UUID) error
+	Delete(id string) error
+	Restore(id string) error
 	FindByEmailIncludeDeleted(email string) (*models.Tenant, error)
 }
 
@@ -32,7 +31,7 @@ func (r *tenantRepository) Create(tenant *models.Tenant) error {
 	return r.db.Create(tenant).Error
 }
 
-func (r *tenantRepository) FindByID(id uuid.UUID) (*models.Tenant, error) {
+func (r *tenantRepository) FindByID(id string) (*models.Tenant, error) {
 	var tenant models.Tenant
 	err := r.db.Where("id = ? AND deleted_at IS NULL", id).First(&tenant).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -60,7 +59,7 @@ func (r *tenantRepository) Update(tenant *models.Tenant) error {
 	return r.db.Save(tenant).Error
 }
 
-func (r *tenantRepository) Delete(id uuid.UUID) error {
+func (r *tenantRepository) Delete(id string) error {
 	return r.db.Model(&models.Tenant{}).
 		Where("id = ?", id).
 		Update("deleted_at", gorm.Expr("NOW()")).Error
@@ -75,7 +74,7 @@ func (r *tenantRepository) FindByEmailIncludeDeleted(email string) (*models.Tena
 	return &tenant, err
 }
 
-func (r *tenantRepository) Restore(id uuid.UUID) error {
+func (r *tenantRepository) Restore(id string) error {
 	return r.db.Model(&models.Tenant{}).
 		Where("id = ?", id).
 		Update("deleted_at", nil).Error

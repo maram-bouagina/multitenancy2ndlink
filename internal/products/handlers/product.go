@@ -147,12 +147,70 @@ func (h *ProductHandler) Update(c *fiber.Ctx) error {
 			return helpers.Fail(c, fiber.StatusNotFound, err)
 		}
 
-		// Convert to model for validation
+		// Validate the effective post-update state, not a partial shell model.
+		visibility := current.Visibility
+		if req.Visibility != nil {
+			visibility = *req.Visibility
+		}
+
+		currency := current.Currency
+		if req.Currency != nil {
+			currency = *req.Currency
+		}
+
+		trackStock := current.TrackStock
+		if req.TrackStock != nil {
+			trackStock = *req.TrackStock
+		}
+
+		stock := current.Stock
+		if req.Stock != nil {
+			stock = *req.Stock
+		}
+
+		weight := current.Weight
+		if req.Weight != nil {
+			weight = req.Weight
+		}
+
+		salePrice := current.SalePrice
+		if req.SalePrice != nil {
+			salePrice = req.SalePrice
+		}
+
+		saleStart := current.SaleStart
+		if req.SaleStart != nil {
+			saleStart = req.SaleStart
+		}
+
+		saleEnd := current.SaleEnd
+		if req.SaleEnd != nil {
+			saleEnd = req.SaleEnd
+		}
+
 		product := &models.Product{
 			Title:       current.Title,
 			Description: current.Description,
 			Price:       current.Price,
 			Status:      models.ProductStatus(*req.Status),
+			Visibility:  visibility,
+			Currency:    currency,
+			TrackStock:  trackStock,
+			Stock:       stock,
+			Weight:      weight,
+			SalePrice:   salePrice,
+			SaleStart:   saleStart,
+			SaleEnd:     saleEnd,
+		}
+
+		if req.Title != nil {
+			product.Title = *req.Title
+		}
+		if req.Description != nil {
+			product.Description = req.Description
+		}
+		if req.Price != nil {
+			product.Price = *req.Price
 		}
 
 		if err := h.publicationSvc.ValidateForPublication(product); err != nil {

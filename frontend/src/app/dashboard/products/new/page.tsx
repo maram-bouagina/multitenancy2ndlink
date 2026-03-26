@@ -8,12 +8,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ProductTagPicker } from '@/components/dashboard/product-tag-picker';
 import { getApiErrorMessage } from '@/lib/api/errors';
 import { useAuth } from '@/lib/hooks/use-auth';
-import { useAssignProductTags, useCategories, useCreateProduct, useTags } from '@/lib/hooks/use-api';
+import { useLanguage } from '@/lib/hooks/use-language';
+import { useAssignProductTags, useCategories, useCreateProduct, useCreateProductImage, useTags } from '@/lib/hooks/use-api';
 
 const productSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -48,11 +51,15 @@ function optionalNumber(value?: number) {
 export default function NewProductPage() {
   const router = useRouter();
   const { currentStore } = useAuth();
+  const { t } = useLanguage();
   const storeId = currentStore?.id || '';
   const [error, setError] = useState<string>('');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [primaryImage, setPrimaryImage] = useState<File | null>(null);
+  const [secondaryFiles, setSecondaryFiles] = useState<File[]>([]);
 
   const createProductMutation = useCreateProduct();
+  const createImageMutation = useCreateProductImage();
   const assignTagsMutation = useAssignProductTags();
   const { data: categories } = useCategories(storeId);
   const { data: tags } = useTags(storeId);
@@ -70,7 +77,7 @@ export default function NewProductPage() {
 
   const onSubmit = async (data: ProductForm) => {
     if (!storeId) {
-      setError('Select a store before creating products.');
+      setError(t.productForm.selectStoreCreate);
       return;
     }
 
@@ -95,28 +102,46 @@ export default function NewProductPage() {
         await assignTagsMutation.mutateAsync({ storeId, productId: product.id, tagIds: selectedTagIds });
       }
 
+      if (primaryImage || secondaryFiles.length > 0) {
+        const uploads: Promise<unknown>[] = [];
+        if (primaryImage) {
+          uploads.push(
+            createImageMutation.mutateAsync({
+              storeId,
+              productId: product.id,
+              file: primaryImage,
+              position: 0,
+            })
+          );
+        }
+        secondaryFiles.forEach((file, index) => {
+          uploads.push(
+            createImageMutation.mutateAsync({
+              storeId,
+              productId: product.id,
+              file,
+              position: (primaryImage ? 1 : 0) + index,
+            })
+          );
+        });
+        await Promise.allSettled(uploads);
+        router.push(`/dashboard/products/${product.id}`);
+        return;
+      }
+
       router.push('/dashboard/products');
     } catch (error: unknown) {
-      setError(getApiErrorMessage(error, 'Failed to create product'));
+      setError(getApiErrorMessage(error, t.productForm.createFailed));
     }
   };
-
-  const toggleTag = (tagId: string) => {
-    setSelectedTagIds((current) => (
-      current.includes(tagId)
-        ? current.filter((id) => id !== tagId)
-        : [...current, tagId]
-    ));
-  };
-
 
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-3xl">
         <CardHeader>
-          <CardTitle>Create Product</CardTitle>
+          <CardTitle>{t.productForm.createTitle}</CardTitle>
           <CardDescription>
-            Add a new product to your store.
+            {t.productForm.createDesc}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -129,100 +154,100 @@ export default function NewProductPage() {
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="title">Product Title *</Label>
-                <Input id="title" placeholder="Cool T-Shirt" {...register('title')} />
+                <Label htmlFor="title">{t.productForm.title}</Label>
+                <Input id="title" placeholder={t.productForm.titlePlaceholder} {...register('title')} />
                 {errors.title && <p className="text-sm text-red-600">{errors.title.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="slug">Slug</Label>
-                <Input id="slug" placeholder="cool-t-shirt" {...register('slug')} />
+                <Label htmlFor="slug">{t.productForm.slug}</Label>
+                <Input id="slug" placeholder={t.productForm.slugPlaceholder} {...register('slug')} />
                 {errors.slug && <p className="text-sm text-red-600">{errors.slug.message}</p>}
               </div>
 
               <div className="space-y-2 lg:col-span-2">
-                <Label htmlFor="description">Description</Label>
-                <Input id="description" placeholder="Product description" {...register('description')} />
+                <Label htmlFor="description">{t.productForm.description}</Label>
+                <Textarea id="description" placeholder={t.productForm.descriptionPlaceholder} rows={4} {...register('description')} />
                 {errors.description && <p className="text-sm text-red-600">{errors.description.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="price">Price *</Label>
+                <Label htmlFor="price">{t.productForm.price}</Label>
                 <Input id="price" type="number" step="0.01" placeholder="0.00" {...register('price', { valueAsNumber: true })} />
                 {errors.price && <p className="text-sm text-red-600">{errors.price.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="sale_price">Sale Price</Label>
+                <Label htmlFor="sale_price">{t.productForm.salePrice}</Label>
                 <Input id="sale_price" type="number" step="0.01" placeholder="0.00" {...register('sale_price', { valueAsNumber: true })} />
                 {errors.sale_price && <p className="text-sm text-red-600">{errors.sale_price.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="currency">Currency *</Label>
+                <Label htmlFor="currency">{t.productForm.currency}</Label>
                 <Input id="currency" placeholder="USD" {...register('currency')} />
                 {errors.currency && <p className="text-sm text-red-600">{errors.currency.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="stock">Stock *</Label>
+                <Label htmlFor="stock">{t.productForm.stock}</Label>
                 <Input id="stock" type="number" placeholder="0" {...register('stock', { valueAsNumber: true })} />
                 {errors.stock && <p className="text-sm text-red-600">{errors.stock.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="status">Status *</Label>
+                <Label htmlFor="status">{t.productForm.status}</Label>
                 <select id="status" {...register('status')} className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-site-text shadow-sm transition-colors file:border-0 file:bg-transparent file:text-site-text file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
-                  <option value="draft">Draft</option>
-                  <option value="published">Published</option>
-                  <option value="archived">Archived</option>
+                  <option value="draft">{t.productForm.statusDraft}</option>
+                  <option value="published">{t.productForm.statusPublished}</option>
+                  <option value="archived">{t.productForm.statusArchived}</option>
                 </select>
                 {errors.status && <p className="text-sm text-red-600">{errors.status.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="visibility">Visibility *</Label>
+                <Label htmlFor="visibility">{t.productForm.visibility}</Label>
                 <select id="visibility" {...register('visibility')} className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-site-text shadow-sm transition-colors file:border-0 file:bg-transparent file:text-site-text file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
-                  <option value="public">Public</option>
-                  <option value="private">Private</option>
+                  <option value="public">{t.productForm.visibilityPublic}</option>
+                  <option value="private">{t.productForm.visibilityPrivate}</option>
                 </select>
                 {errors.visibility && <p className="text-sm text-red-600">{errors.visibility.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="sku">SKU</Label>
-                <Input id="sku" placeholder="SKU-001" {...register('sku')} />
+                <Label htmlFor="sku">{t.productForm.sku}</Label>
+                <Input id="sku" placeholder={t.productForm.skuPlaceholder} {...register('sku')} />
                 {errors.sku && <p className="text-sm text-red-600">{errors.sku.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="weight">Weight</Label>
-                <Input id="weight" type="number" step="0.01" placeholder="1.5" {...register('weight', { valueAsNumber: true })} />
+                <Label htmlFor="weight">{t.productForm.weight}</Label>
+                <Input id="weight" type="number" step="0.01" placeholder={t.productForm.weightPlaceholderCreate} {...register('weight', { valueAsNumber: true })} />
                 {errors.weight && <p className="text-sm text-red-600">{errors.weight.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="brand">Brand</Label>
-                <Input id="brand" placeholder="Brand name" {...register('brand')} />
+                <Label htmlFor="brand">{t.productForm.brand}</Label>
+                <Input id="brand" placeholder={t.productForm.brandPlaceholder} {...register('brand')} />
                 {errors.brand && <p className="text-sm text-red-600">{errors.brand.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="dimensions">Dimensions</Label>
-                <Input id="dimensions" placeholder="10x10x10" {...register('dimensions')} />
+                <Label htmlFor="dimensions">{t.productForm.dimensions}</Label>
+                <Input id="dimensions" placeholder={t.productForm.dimensionsPlaceholderCreate} {...register('dimensions')} />
                 {errors.dimensions && <p className="text-sm text-red-600">{errors.dimensions.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="tax_class">Tax Class</Label>
-                <Input id="tax_class" placeholder="standard" {...register('tax_class')} />
+                <Label htmlFor="tax_class">{t.productForm.taxClass}</Label>
+                <Input id="tax_class" placeholder={t.productForm.taxClassPlaceholderCreate} {...register('tax_class')} />
                 {errors.tax_class && <p className="text-sm text-red-600">{errors.tax_class.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="category_id">Category (optional)</Label>
+                <Label htmlFor="category_id">{t.productForm.categoryOptional}</Label>
                 <select id="category_id" {...register('category_id')} className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-site-text shadow-sm transition-colors file:border-0 file:bg-transparent file:text-site-text file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
-                  <option value="">Select a category</option>
+                  <option value="">{t.productForm.selectCategory}</option>
                   {categories?.map((cat) => (
                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
@@ -233,45 +258,71 @@ export default function NewProductPage() {
               <div className="space-y-2">
                 <Label htmlFor="track_stock" className="flex items-center gap-2">
                   <input type="checkbox" id="track_stock" {...register('track_stock')} className="h-4 w-4" />
-                  <span>Track Stock</span>
+                  <span>{t.productForm.trackStock}</span>
                 </Label>
               </div>
             </div>
 
+            <ProductTagPicker
+              tags={tags ?? []}
+              selectedIds={selectedTagIds}
+              onChange={setSelectedTagIds}
+              title={t.productForm.tags}
+              description={t.productForm.createTagsDesc}
+              searchPlaceholder={t.productForm.tagSearchPlaceholder}
+              selectedLabel={t.productForm.selectedTags}
+              emptyState={t.productForm.emptyTagsCreate}
+              noMatches={t.productForm.noTagMatches}
+            />
+
             <div className="space-y-3 rounded-lg border border-gray-200 p-4">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Tags</h2>
-                <p className="text-sm text-gray-600">Assign tags while creating the product.</p>
+                <h2 className="text-lg font-semibold text-gray-900">{t.productForm.media}</h2>
               </div>
-              {!tags || tags.length === 0 ? (
-                <p className="text-sm text-gray-500">Create tags first if you want to assign them now.</p>
-              ) : (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {tags.map((tag) => {
-                    const checked = selectedTagIds.includes(tag.id);
 
-                    return (
-                      <label key={tag.id} className="flex items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleTag(tag.id)}
-                          className="h-4 w-4"
-                        />
-                        <span>{tag.name}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="primary-image">{t.productForm.primaryImage}</Label>
+                <p className="text-sm text-gray-600">{t.productForm.primaryImageHint}</p>
+                <Input
+                  id="primary-image"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => setPrimaryImage(event.target.files?.[0] ?? null)}
+                />
+                {primaryImage && (
+                  <div className="flex items-center gap-2 rounded-md bg-green-50 p-2 text-sm text-green-700">
+                    <span>{primaryImage.name}</span>
+                    <button type="button" className="text-red-500 hover:text-red-700" onClick={() => setPrimaryImage(null)}>&times;</button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="secondary-images">{t.productForm.secondaryImage}</Label>
+                <p className="text-sm text-gray-600">{t.productForm.secondaryImageHint}</p>
+                <Input
+                  id="secondary-images"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  multiple
+                  onChange={(event) => setSecondaryFiles(Array.from(event.target.files ?? []))}
+                />
+                {secondaryFiles.length > 0 && (
+                  <div className="space-y-1 rounded-md bg-gray-50 p-2 text-sm text-gray-600">
+                    {secondaryFiles.map((file) => (
+                      <p key={`${file.name}-${file.size}`}>{file.name}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-2">
               <Button type="button" variant="outline" className="w-full" asChild>
-                <Link href="/dashboard/products">Cancel</Link>
+                <Link href="/dashboard/products">{t.productForm.cancel}</Link>
               </Button>
-              <Button type="submit" className="w-full" disabled={createProductMutation.isPending || assignTagsMutation.isPending}>
-                Create Product
+              <Button type="submit" className="w-full" disabled={createProductMutation.isPending || assignTagsMutation.isPending || createImageMutation.isPending}>
+                {t.productForm.create}
               </Button>
             </div>
           </form>

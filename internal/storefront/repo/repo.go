@@ -16,6 +16,7 @@ import (
 
 	"multitenancypfe/internal/database"
 	prodModels "multitenancypfe/internal/products/models"
+	prodRepo "multitenancypfe/internal/products/repo"
 	storeModels "multitenancypfe/internal/store/models"
 	sfDto "multitenancypfe/internal/storefront/dto"
 	sfModels "multitenancypfe/internal/storefront/models"
@@ -30,7 +31,7 @@ func New() *StorefrontRepo { return &StorefrontRepo{} }
 
 // UpsertSlug inserts or updates the public slug → tenant/store mapping.
 // Called by the store service after Create, Update, or status changes.
-func UpsertSlug(slug string, tenantID, storeID uuid.UUID, status string) error {
+func UpsertSlug(slug string, tenantID string, storeID uuid.UUID, status string) error {
 	entry := sfModels.StoreSlugIndex{
 		Slug:     slug,
 		TenantID: tenantID,
@@ -59,8 +60,8 @@ func (r *StorefrontRepo) SlugLookup(slug string) (*sfModels.StoreSlugIndex, erro
 
 // TenantScopedDB opens a dedicated connection pinned to the tenant schema.
 // The returned closer MUST be called exactly once when the request finishes.
-func TenantScopedDB(tenantID uuid.UUID) (*gorm.DB, func(), error) {
-	schema := fmt.Sprintf("tenant_%s", tenantID.String())
+func TenantScopedDB(tenantID string) (*gorm.DB, func(), error) {
+	schema := fmt.Sprintf("tenant_%s", tenantID)
 
 	sqlDB, err := database.DB.DB()
 	if err != nil {
@@ -227,6 +228,31 @@ func applyStorefrontCollectionRule(query *gorm.DB, rule string) (*gorm.DB, error
 
 // ── Products ─────────────────────────────────────────────────────────────────
 
+func LoadPrimaryProductImages(db *gorm.DB, products []prodModels.Product) (map[uuid.UUID][]prodModels.ProductImage, error) {
+	if len(products) == 0 {
+		return map[uuid.UUID][]prodModels.ProductImage{}, nil
+	}
+
+	productIDs := make([]uuid.UUID, 0, len(products))
+	for _, product := range products {
+		productIDs = append(productIDs, product.ID)
+	}
+
+	var images []prodModels.ProductImage
+	if err := db.Where("product_id IN ?", productIDs).Order("product_id ASC, position ASC").Find(&images).Error; err != nil {
+		return nil, err
+	}
+
+	imageMap := make(map[uuid.UUID][]prodModels.ProductImage, len(productIDs))
+	for _, image := range images {
+		if _, ok := imageMap[image.ProductID]; ok {
+			continue
+		}
+		imageMap[image.ProductID] = []prodModels.ProductImage{image}
+	}
+	return imageMap, nil
+}
+
 // ProductFilter holds public product query options.
 type ProductFilter struct {
 	Search     string
@@ -295,7 +321,7 @@ func (r *StorefrontRepo) ListProducts(db *gorm.DB, storeID uuid.UUID, f ProductF
 // GetProductBySlug returns product detail with images and related products.
 func (r *StorefrontRepo) GetProductBySlug(
 	db *gorm.DB, storeID uuid.UUID, slug string,
-) (*prodModels.Product, []prodModels.ProductImage, []prodModels.Product, error) {
+) (*prodModels.Product, []prodModels.ProductImage, []prodModels.Product, []prodModels.Product, []prodModels.Product, error) {
 	var product prodModels.Product
 	err := db.Where(
 		"store_id = ? AND slug = ? AND status = 'published' AND visibility = 'public' AND deleted_at IS NULL",
@@ -306,26 +332,36 @@ func (r *StorefrontRepo) GetProductBySlug(
 		First(&product).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil, nil
 	}
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	// Images ordered by position
 	var images []prodModels.ProductImage
 	db.Where("product_id = ?", product.ID).Order("position ASC").Find(&images)
 
-	// Related products from the same category (random, max 4)
+	// Prefer explicit admin-managed relations, then fall back to same-category suggestions.
 	var related []prodModels.Product
-	if product.CategoryID != nil {
+	var upsell []prodModels.Product
+	var crossSell []prodModels.Product
+	relationRepo := prodRepo.NewProductRelationRepository(db)
+	upsell, crossSell, relationErr := relationRepo.ListPublicRelatedProducts(storeID, product.ID, 2)
+	if relationErr != nil {
+		return nil, nil, nil, nil, nil, relationErr
+	}
+	related = append(related, upsell...)
+	related = append(related, crossSell...)
+
+	if len(related) == 0 && product.CategoryID != nil {
 		db.Where(
 			"store_id = ? AND category_id = ? AND id != ? AND status = 'published' AND visibility = 'public' AND deleted_at IS NULL",
 			storeID, product.CategoryID, product.ID,
 		).Order("RANDOM()").Limit(4).Find(&related)
 	}
 
-	return &product, images, related, nil
+	return &product, images, related, upsell, crossSell, nil
 }
 
 // ── Conversion helpers ───────────────────────────────────────────────────────
@@ -429,9 +465,10 @@ func BuildPaginatedProducts(products []prodModels.Product, total int64, page, li
 	if limit > 0 {
 		pages = int(math.Ceil(float64(total) / float64(limit)))
 	}
+	imageMap := map[uuid.UUID][]prodModels.ProductImage{}
 	items := make([]sfDto.ProductPublicResponse, len(products))
 	for i := range products {
-		items[i] = ToProductPublic(&products[i], nil)
+		items[i] = ToProductPublic(&products[i], imageMap[products[i].ID])
 	}
 	return sfDto.PaginatedProductsResponse{
 		Products: items,

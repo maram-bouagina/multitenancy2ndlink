@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"multitenancypfe/internal/store/dto"
 	"multitenancypfe/internal/store/models"
@@ -12,12 +13,13 @@ import (
 )
 
 type StoreService interface {
-	Create(tenantID uuid.UUID, req dto.CreateStoreRequest) (*dto.StoreResponse, error)
-	GetByID(id uuid.UUID) (*dto.StoreResponse, error)
-	GetByTenantID(tenantID uuid.UUID) ([]dto.StoreResponse, error)
-	Update(id uuid.UUID, req dto.UpdateStoreRequest) (*dto.StoreResponse, error)
-	PublishCustomization(id uuid.UUID, req dto.PublishStoreCustomizationRequest) (*dto.StoreResponse, error)
-	Delete(id uuid.UUID) error
+	Create(db *gorm.DB, tenantID string, req dto.CreateStoreRequest) (*dto.StoreResponse, error)
+	GetByID(db *gorm.DB, id uuid.UUID) (*dto.StoreResponse, error)
+	GetByTenantID(db *gorm.DB, tenantID string) ([]dto.StoreResponse, error)
+	Update(db *gorm.DB, id uuid.UUID, req dto.UpdateStoreRequest) (*dto.StoreResponse, error)
+	UpdateStatus(db *gorm.DB, id uuid.UUID, req dto.UpdateStoreStatusRequest) (*dto.StoreResponse, error)
+	PublishCustomization(db *gorm.DB, id uuid.UUID, req dto.PublishStoreCustomizationRequest) (*dto.StoreResponse, error)
+	Delete(db *gorm.DB, id uuid.UUID) error
 }
 
 type storeService struct {
@@ -28,8 +30,8 @@ func NewStoreService(r repo.StoreRepository) StoreService {
 	return &storeService{repo: r}
 }
 
-func (s *storeService) Create(tenantID uuid.UUID, req dto.CreateStoreRequest) (*dto.StoreResponse, error) {
-	existing, err := s.repo.FindBySlug(req.Slug)
+func (s *storeService) Create(db *gorm.DB, tenantID string, req dto.CreateStoreRequest) (*dto.StoreResponse, error) {
+	existing, err := s.repo.FindBySlug(db, req.Slug)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +39,7 @@ func (s *storeService) Create(tenantID uuid.UUID, req dto.CreateStoreRequest) (*
 		return nil, errors.New("slug already in use")
 	}
 
-	existingStores, err := s.repo.FindByTenantID(tenantID)
+	existingStores, err := s.repo.FindByTenantID(db, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -64,6 +66,7 @@ func (s *storeService) Create(tenantID uuid.UUID, req dto.CreateStoreRequest) (*
 		StorefrontLayoutPublished: "[]",
 		ThemeVersion:              1,
 		TaxNumber:                 req.TaxNumber,
+		MaintenanceMessage:        req.MaintenanceMessage,
 		Status:                    "active",
 	}
 	if req.ThemePrimaryColor != nil && *req.ThemePrimaryColor != "" {
@@ -82,7 +85,7 @@ func (s *storeService) Create(tenantID uuid.UUID, req dto.CreateStoreRequest) (*
 		store.StorefrontLayoutDraft = *req.StorefrontLayoutDraft
 		store.StorefrontLayoutPublished = *req.StorefrontLayoutDraft
 	}
-	if err := s.repo.Create(store); err != nil {
+	if err := s.repo.Create(db, store); err != nil {
 		return nil, err
 	}
 	// Register slug in the public routing index (best-effort; non-blocking)
@@ -90,16 +93,16 @@ func (s *storeService) Create(tenantID uuid.UUID, req dto.CreateStoreRequest) (*
 	return toStoreResponse(store), nil
 }
 
-func (s *storeService) GetByID(id uuid.UUID) (*dto.StoreResponse, error) {
-	store, err := s.findOrFail(id)
+func (s *storeService) GetByID(db *gorm.DB, id uuid.UUID) (*dto.StoreResponse, error) {
+	store, err := s.findOrFail(db, id)
 	if err != nil {
 		return nil, err
 	}
 	return toStoreResponse(store), nil
 }
 
-func (s *storeService) GetByTenantID(tenantID uuid.UUID) ([]dto.StoreResponse, error) {
-	stores, err := s.repo.FindByTenantID(tenantID)
+func (s *storeService) GetByTenantID(db *gorm.DB, tenantID string) ([]dto.StoreResponse, error) {
+	stores, err := s.repo.FindByTenantID(db, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -110,8 +113,8 @@ func (s *storeService) GetByTenantID(tenantID uuid.UUID) ([]dto.StoreResponse, e
 	return result, nil
 }
 
-func (s *storeService) Update(id uuid.UUID, req dto.UpdateStoreRequest) (*dto.StoreResponse, error) {
-	store, err := s.findOrFail(id)
+func (s *storeService) Update(db *gorm.DB, id uuid.UUID, req dto.UpdateStoreRequest) (*dto.StoreResponse, error) {
+	store, err := s.findOrFail(db, id)
 	if err != nil {
 		return nil, err
 	}
@@ -158,11 +161,14 @@ func (s *storeService) Update(id uuid.UUID, req dto.UpdateStoreRequest) (*dto.St
 	if req.TaxNumber != nil {
 		store.TaxNumber = req.TaxNumber
 	}
+	if req.MaintenanceMessage != nil {
+		store.MaintenanceMessage = req.MaintenanceMessage
+	}
 	if req.Status != nil {
 		store.Status = *req.Status
 	}
 
-	if err := s.repo.Update(store); err != nil {
+	if err := s.repo.Update(db, store); err != nil {
 		return nil, err
 	}
 	// Keep slug index in sync (status or other indexed fields may have changed)
@@ -170,8 +176,25 @@ func (s *storeService) Update(id uuid.UUID, req dto.UpdateStoreRequest) (*dto.St
 	return toStoreResponse(store), nil
 }
 
-func (s *storeService) PublishCustomization(id uuid.UUID, req dto.PublishStoreCustomizationRequest) (*dto.StoreResponse, error) {
-	store, err := s.findOrFail(id)
+func (s *storeService) UpdateStatus(db *gorm.DB, id uuid.UUID, req dto.UpdateStoreStatusRequest) (*dto.StoreResponse, error) {
+	store, err := s.findOrFail(db, id)
+	if err != nil {
+		return nil, err
+	}
+	// Platform admins set "suspended"; merchants cannot override it.
+	if store.Status == "suspended" {
+		return nil, errors.New("cannot change status of a suspended store")
+	}
+	store.Status = req.Status
+	if err := s.repo.Update(db, store); err != nil {
+		return nil, err
+	}
+	_ = sfRepo.UpsertSlug(store.Slug, store.TenantID, store.ID, store.Status)
+	return toStoreResponse(store), nil
+}
+
+func (s *storeService) PublishCustomization(db *gorm.DB, id uuid.UUID, req dto.PublishStoreCustomizationRequest) (*dto.StoreResponse, error) {
+	store, err := s.findOrFail(db, id)
 	if err != nil {
 		return nil, err
 	}
@@ -186,19 +209,19 @@ func (s *storeService) PublishCustomization(id uuid.UUID, req dto.PublishStoreCu
 	}
 	store.ThemeVersion = store.ThemeVersion + 1
 
-	if err := s.repo.Update(store); err != nil {
+	if err := s.repo.Update(db, store); err != nil {
 		return nil, err
 	}
 
 	return toStoreResponse(store), nil
 }
 
-func (s *storeService) Delete(id uuid.UUID) error {
-	store, err := s.findOrFail(id)
+func (s *storeService) Delete(db *gorm.DB, id uuid.UUID) error {
+	store, err := s.findOrFail(db, id)
 	if err != nil {
 		return err
 	}
-	if err := s.repo.Delete(id); err != nil {
+	if err := s.repo.Delete(db, id); err != nil {
 		return err
 	}
 	// Remove from public routing index
@@ -208,8 +231,8 @@ func (s *storeService) Delete(id uuid.UUID) error {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-func (s *storeService) findOrFail(id uuid.UUID) (*models.Store, error) {
-	store, err := s.repo.FindByID(id)
+func (s *storeService) findOrFail(db *gorm.DB, id uuid.UUID) (*models.Store, error) {
+	store, err := s.repo.FindByID(db, id)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +245,7 @@ func (s *storeService) findOrFail(id uuid.UUID) (*models.Store, error) {
 func toStoreResponse(s *models.Store) *dto.StoreResponse {
 	return &dto.StoreResponse{
 		ID:                        s.ID.String(),
-		TenantID:                  s.TenantID.String(),
+		TenantID:                  s.TenantID,
 		Name:                      s.Name,
 		Slug:                      s.Slug,
 		Email:                     s.Email,
@@ -240,6 +263,7 @@ func toStoreResponse(s *models.Store) *dto.StoreResponse {
 		StorefrontLayoutPublished: s.StorefrontLayoutPublished,
 		ThemeVersion:              s.ThemeVersion,
 		TaxNumber:                 s.TaxNumber,
+		MaintenanceMessage:        s.MaintenanceMessage,
 		Status:                    s.Status,
 	}
 }

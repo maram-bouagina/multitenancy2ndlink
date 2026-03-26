@@ -24,7 +24,7 @@ type ProductRepository interface {
 	SKUExists(db *gorm.DB, sku string, storeID uuid.UUID, excludeID *uuid.UUID) (bool, error)
 	GetTotalReservedStock(db *gorm.DB, productID uuid.UUID) (int, error)
 	CreateReservation(db *gorm.DB, reservation *models.StockReservation) error
-	UserHasReservation(db *gorm.DB, productID, userID uuid.UUID) (bool, error)
+	UserHasReservation(db *gorm.DB, productID uuid.UUID, userID string) (bool, error)
 }
 
 type productRepository struct {
@@ -154,7 +154,8 @@ func (r *productRepository) CountAll(db *gorm.DB, storeID uuid.UUID, filter dto.
 // FindAllForExport retourne tous les produits sans pagination (pour export CSV/Excel)
 func (r *productRepository) FindAllForExport(db *gorm.DB, storeID uuid.UUID) ([]models.Product, error) {
 	var products []models.Product
-	err := db.Where("store_id = ? AND deleted_at IS NULL", storeID).
+	err := db.Preload("Category").
+		Where("store_id = ? AND deleted_at IS NULL", storeID).
 		Order("created_at DESC").
 		Find(&products).Error
 	return products, err
@@ -170,10 +171,13 @@ func (r *productRepository) Delete(db *gorm.DB, id, storeID uuid.UUID) error {
 	result := db.Model(&models.Product{}).
 		Where("id = ? AND store_id = ? AND deleted_at IS NULL", id, storeID).
 		Update("deleted_at", gorm.Expr("NOW()"))
+	if result.Error != nil {
+		return result.Error
+	}
 	if result.RowsAffected == 0 {
 		return errors.New("product not found")
 	}
-	return result.Error
+	return nil
 }
 
 // Vérifie si un slug existe déjà
@@ -220,7 +224,7 @@ func (r *productRepository) CreateReservation(db *gorm.DB, reservation *models.S
 }
 
 // UserHasReservation checks if a user already has an active reservation for a product
-func (r *productRepository) UserHasReservation(db *gorm.DB, productID, userID uuid.UUID) (bool, error) {
+func (r *productRepository) UserHasReservation(db *gorm.DB, productID uuid.UUID, userID string) (bool, error) {
 	var count int64
 	err := db.Model(&models.StockReservation{}).
 		Where("product_id = ? AND user_id = ? AND released_at IS NULL AND expires_at > NOW()", productID, userID).

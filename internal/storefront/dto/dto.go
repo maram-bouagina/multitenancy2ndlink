@@ -85,6 +85,8 @@ type CollectionPageResponse struct {
 }
 
 type ProductDetailResponse struct {
-	Product ProductPublicResponse   `json:"product"`
-	Related []ProductPublicResponse `json:"related"`
+	Product           ProductPublicResponse   `json:"product"`
+	Related           []ProductPublicResponse `json:"related"`
+	UpsellProducts    []ProductPublicResponse `json:"upsell_products,omitempty"`
+	CrossSellProducts []ProductPublicResponse `json:"cross_sell_products,omitempty"`
 }

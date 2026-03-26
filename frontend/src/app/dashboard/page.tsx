@@ -7,9 +7,11 @@ import { useProducts, useCategories, useCollections, useTags } from '@/lib/hooks
 import { Package, FolderOpen, Tag as TagIcon, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/hooks/use-auth';
+import { useLanguage } from '@/lib/hooks/use-language';
 
 export default function DashboardPage() {
   const { currentStore, stores, isLoading } = useAuth();
+  const { t } = useLanguage();
   const storeId = currentStore?.id ?? '';
 
   const { data: products } = useProducts(storeId);
@@ -19,28 +21,28 @@ export default function DashboardPage() {
 
   const stats = [
     {
-      name: 'Total Products',
+      name: t.dashboard.totalProducts,
       value: products?.data?.length || 0,
       icon: Package,
       href: '/dashboard/products',
       color: 'text-blue-600',
     },
     {
-      name: 'Categories',
+      name: t.dashboard.categories,
       value: categories?.length || 0,
       icon: FolderOpen,
       href: '/dashboard/categories',
       color: 'text-green-600',
     },
     {
-      name: 'Collections',
+      name: t.dashboard.collections,
       value: collections?.length || 0,
       icon: FolderOpen,
       href: '/dashboard/collections',
       color: 'text-purple-600',
     },
     {
-      name: 'Tags',
+      name: t.dashboard.tags,
       value: tags?.length || 0,
       icon: TagIcon,
       href: '/dashboard/tags',
@@ -51,7 +53,7 @@ export default function DashboardPage() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-gray-600">Loading your dashboard...</div>
+        <div className="text-gray-600">{t.dashboard.loading}</div>
       </div>
     );
   }
@@ -59,14 +61,10 @@ export default function DashboardPage() {
   if (!currentStore) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
-        <h2 className="text-xl font-semibold">No store selected</h2>
-        <p className="text-gray-600 text-center max-w-md">
-          You need to create or select a store to view dashboard data.
-        </p>
+        <h2 className="text-xl font-semibold">{t.dashboard.noStoreTitle}</h2>
+        <p className="text-gray-600 text-center max-w-md">{t.dashboard.noStoreDesc}</p>
         <Button asChild>
-          <Link href="/dashboard/stores">
-            Manage Stores
-          </Link>
+          <Link href="/dashboard/stores">{t.dashboard.manageStores}</Link>
         </Button>
       </div>
     );
@@ -74,51 +72,41 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600">Welcome back! Here&apos;s what&apos;s happening with your store.</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t.dashboard.title}</h1>
+          <p className="text-gray-600">{t.dashboard.welcome}</p>
         </div>
         <Button asChild>
           <Link href="/dashboard/products/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Product
+            <Plus className="me-2 h-4 w-4" />
+            {t.dashboard.addProduct}
           </Link>
         </Button>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
-          <Card key={stat.name} className="hover:shadow-md transition-shadow">
+          <Card key={stat.name} className="transition-shadow hover:shadow-md">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                {stat.name}
-              </CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">{stat.name}</CardTitle>
               <stat.icon className={`h-4 w-4 ${stat.color}`} />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stat.value}</div>
-              <Button variant="link" className="p-0 h-auto text-sm" asChild>
-                <Link href={stat.href}>
-                  View all →
-                </Link>
+              <Button variant="link" className="h-auto p-0 text-sm" asChild>
+                <Link href={stat.href}>{t.dashboard.viewAll}</Link>
               </Button>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Recent Activity */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Recent Products */}
         <Card>
           <CardHeader>
-            <CardTitle>Recent Products</CardTitle>
-            <CardDescription>
-              Your latest product additions
-            </CardDescription>
+            <CardTitle>{t.dashboard.recentProducts}</CardTitle>
+            <CardDescription>{t.dashboard.recentProductsDesc}</CardDescription>
           </CardHeader>
           <CardContent>
             {products?.data && products.data.length > 0 ? (
@@ -127,35 +115,27 @@ export default function DashboardPage() {
                   <div key={product.id} className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <div className="shrink-0">
-                        <div className="h-8 w-8 bg-gray-200 rounded"></div>
+                        <div className="h-8 w-8 rounded bg-gray-200"></div>
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {product.title}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          ${product.price}
-                        </p>
+                        <p className="text-sm font-medium text-gray-900">{product.title}</p>
+                        <p className="text-sm text-gray-500">${product.price}</p>
                       </div>
                     </div>
-                    <Badge variant={product.status === 'published' ? 'default' : 'secondary'}>
-                      {product.status}
-                    </Badge>
+                    <Badge variant={product.status === 'published' ? 'default' : 'secondary'}>{product.status}</Badge>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-6">
+              <div className="py-6 text-center">
                 <Package className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">No products</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  Get started by creating your first product.
-                </p>
+                <h3 className="mt-2 text-sm font-medium text-gray-900">{t.dashboard.noProducts}</h3>
+                <p className="mt-1 text-sm text-gray-500">{t.dashboard.noProductsDesc}</p>
                 <div className="mt-6">
                   <Button asChild>
                     <Link href="/dashboard/products/new">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add Product
+                      <Plus className="me-2 h-4 w-4" />
+                      {t.dashboard.addProduct}
                     </Link>
                   </Button>
                 </div>
@@ -164,38 +144,35 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Quick Actions */}
         <Card>
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>
-              Common tasks to manage your store
-            </CardDescription>
+            <CardTitle>{t.dashboard.quickActions}</CardTitle>
+            <CardDescription>{t.dashboard.quickActionsDesc}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
               <Button variant="outline" className="h-20 flex-col" asChild>
                 <Link href="/dashboard/products/new">
-                  <Package className="h-6 w-6 mb-2" />
-                  Add Product
+                  <Package className="mb-2 h-6 w-6" />
+                  {t.dashboard.addProduct}
                 </Link>
               </Button>
               <Button variant="outline" className="h-20 flex-col" asChild>
                 <Link href="/dashboard/categories/new">
-                  <FolderOpen className="h-6 w-6 mb-2" />
-                  Add Category
+                  <FolderOpen className="mb-2 h-6 w-6" />
+                  {t.dashboard.addCategory}
                 </Link>
               </Button>
               <Button variant="outline" className="h-20 flex-col" asChild>
                 <Link href="/dashboard/collections/new">
-                  <FolderOpen className="h-6 w-6 mb-2" />
-                  Add Collection
+                  <FolderOpen className="mb-2 h-6 w-6" />
+                  {t.dashboard.addCollection}
                 </Link>
               </Button>
               <Button variant="outline" className="h-20 flex-col" asChild>
                 <Link href="/dashboard/tags/new">
-                  <TagIcon className="h-6 w-6 mb-2" />
-                  Add Tag
+                  <TagIcon className="mb-2 h-6 w-6" />
+                  {t.dashboard.addTag}
                 </Link>
               </Button>
             </div>
@@ -203,27 +180,22 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Store Info */}
       {stores && stores.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Your Stores</CardTitle>
-            <CardDescription>
-              Manage your store settings and information
-            </CardDescription>
+            <CardTitle>{t.header.yourStores}</CardTitle>
+            <CardDescription>{t.settings.securityDesc}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               {stores.map((store) => (
-                <div key={store.id} className="flex items-center justify-between p-4 border rounded-lg">
+                <div key={store.id} className="flex items-center justify-between rounded-lg border p-4">
                   <div>
                     <h3 className="font-medium">{store.name}</h3>
                     <p className="text-sm text-gray-500">{store.currency} • {store.timezone}</p>
                   </div>
                   <Button variant="outline" size="sm" asChild>
-                    <Link href={`/dashboard/stores/${store.id}`}>
-                      Manage
-                    </Link>
+                    <Link href={`/dashboard/stores/${store.id}`}>{t.dashboard.manageStores}</Link>
                   </Button>
                 </div>
               ))}

@@ -2,13 +2,18 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
+	"net/url"
+	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	excelize "github.com/xuri/excelize/v2"
@@ -25,7 +30,7 @@ var productHeaders = []string{
 	"price", "sale_price", "currency", "sku",
 	"track_stock", "stock", "low_stock_threshold",
 	"weight", "dimensions", "brand", "tax_class",
-	"category_id", "published_at",
+	"category_id", "category_slug", "category_name", "published_at", "image_url", "image_urls",
 }
 
 // ── ExportProductsCSV ─────────────────────────────────────────────────────────
@@ -103,6 +108,8 @@ func ImportProductsFromFile(
 	storeID uuid.UUID,
 	fh *multipart.FileHeader,
 	r repo.ProductRepository,
+	imageUploadSvc ProductImageUploadService,
+	maxImageSizeMB int64,
 ) (*ImportResult, error) {
 	f, err := fh.Open()
 	if err != nil {
@@ -125,7 +132,7 @@ func ImportProductsFromFile(
 		return nil, err
 	}
 
-	return applyProductRows(db, storeID, rows, r)
+	return applyProductRows(db, storeID, rows, r, imageUploadSvc, maxImageSizeMB)
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -152,9 +159,15 @@ func productToRow(p models.Product) []string {
 	if p.CategoryID != nil {
 		row[17] = p.CategoryID.String()
 	}
-	if p.PublishedAt != nil {
-		row[18] = p.PublishedAt.Format("2006-01-02T15:04:05Z")
+	if p.Category != nil {
+		row[18] = p.Category.Slug
+		row[19] = p.Category.Name
 	}
+	if p.PublishedAt != nil {
+		row[20] = p.PublishedAt.Format("2006-01-02T15:04:05Z")
+	}
+	row[21] = ""
+	row[22] = ""
 	return row
 }
 
@@ -163,6 +176,8 @@ func applyProductRows(
 	storeID uuid.UUID,
 	rows [][]string,
 	r repo.ProductRepository,
+	imageUploadSvc ProductImageUploadService,
+	maxImageSizeMB int64,
 ) (*ImportResult, error) {
 	if len(rows) < 2 {
 		return &ImportResult{}, nil
@@ -253,7 +268,12 @@ func applyProductRows(
 		var catID *uuid.UUID
 		if v := get(row, "category_id"); v != "" {
 			if uid, err := uuid.Parse(v); err == nil {
-				catID = &uid
+				// Verify the category actually exists before using the UUID
+				var exists int64
+				db.Model(&models.Category{}).Where("id = ? AND store_id = ?", uid, storeID).Count(&exists)
+				if exists > 0 {
+					catID = &uid
+				}
 			}
 		}
 
@@ -270,7 +290,11 @@ func applyProductRows(
 				} else {
 					res.Warnings = append(res.Warnings, fmt.Sprintf("line %d: category_slug '%s' not found, product imported without category", lineNum, categorySlug))
 				}
-			} else if categoryName := get(row, "category_name"); categoryName != "" {
+			}
+		}
+
+		if catID == nil {
+			if categoryName := get(row, "category_name"); categoryName != "" {
 				resolvedID, found, err := resolveCategoryIDByName(db, storeID, categoryName)
 				if err != nil {
 					res.Errors = append(res.Errors, fmt.Sprintf("line %d: category lookup failed: %s", lineNum, err))
@@ -330,6 +354,8 @@ func applyProductRows(
 			taxClassPtr = &taxClass
 		}
 
+		var targetProduct *models.Product
+
 		if existing != nil {
 			// update
 			existing.Title = title
@@ -355,6 +381,7 @@ func applyProductRows(
 				res.Skipped++
 				continue
 			}
+			targetProduct = existing
 			res.Updated++
 		} else {
 			p := &models.Product{
@@ -378,11 +405,58 @@ func applyProductRows(
 				CategoryID:        catID,
 			}
 			if err := r.Create(db, p); err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: create failed: %s", lineNum, err))
-				res.Skipped++
-				continue
+				// If slug/SKU conflict, try to find the existing product and update instead
+				if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "23505") {
+					var conflicting models.Product
+					if findErr := db.Where("slug = ? AND store_id = ? AND deleted_at IS NULL", slug, storeID).First(&conflicting).Error; findErr == nil {
+						conflicting.Title = title
+						conflicting.Description = descPtr
+						conflicting.Status = status
+						conflicting.Visibility = vis
+						conflicting.Price = price
+						conflicting.SalePrice = salePrice
+						conflicting.Currency = currency
+						conflicting.SKU = skuPtr
+						conflicting.TrackStock = trackStock
+						conflicting.Stock = stock
+						conflicting.LowStockThreshold = lowStockThreshold
+						conflicting.Weight = weight
+						conflicting.Dimensions = dimsPtr
+						conflicting.Brand = brandPtr
+						conflicting.TaxClass = taxClassPtr
+						conflicting.CategoryID = catID
+						if updErr := r.Update(db, &conflicting); updErr != nil {
+							res.Errors = append(res.Errors, fmt.Sprintf("line %d: update-after-conflict failed: %s", lineNum, updErr))
+							res.Skipped++
+							continue
+						}
+						targetProduct = &conflicting
+						res.Updated++
+					} else {
+						res.Errors = append(res.Errors, fmt.Sprintf("line %d: create failed (duplicate): %s", lineNum, err))
+						res.Skipped++
+						continue
+					}
+				} else {
+					res.Errors = append(res.Errors, fmt.Sprintf("line %d: create failed: %s", lineNum, err))
+					res.Skipped++
+					continue
+				}
+			} else {
+				targetProduct = p
+				res.Imported++
 			}
-			res.Imported++
+		}
+
+		imageURLs := collectImageURLs(get(row, "image_url"), get(row, "image_urls"))
+		if imageUploadSvc != nil && targetProduct != nil && len(imageURLs) > 0 {
+			res.Warnings = append(
+				res.Warnings,
+				prefixLineWarnings(
+					lineNum,
+					importProductImages(context.Background(), db, storeID, targetProduct, imageURLs, title, imageUploadSvc, maxImageSizeMB),
+				)...,
+			)
 		}
 	}
 
@@ -475,4 +549,121 @@ func resolveCategoryIDByName(db *gorm.DB, storeID uuid.UUID, name string) (uuid.
 		return uuid.Nil, false, err
 	}
 	return category.ID, true, nil
+}
+
+func collectImageURLs(primary string, rawList string) []string {
+	seen := make(map[string]struct{})
+	values := make([]string, 0)
+	appendValue := func(raw string) {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return
+		}
+		if _, ok := seen[trimmed]; ok {
+			return
+		}
+		seen[trimmed] = struct{}{}
+		values = append(values, trimmed)
+	}
+
+	appendValue(primary)
+	for _, candidate := range strings.FieldsFunc(rawList, func(r rune) bool {
+		return r == '|' || r == ';' || r == ',' || r == '\n' || r == '\r'
+	}) {
+		appendValue(candidate)
+	}
+
+	return values
+}
+
+func importProductImages(
+	ctx context.Context,
+	db *gorm.DB,
+	storeID uuid.UUID,
+	product *models.Product,
+	imageURLs []string,
+	defaultAltText string,
+	imageUploadSvc ProductImageUploadService,
+	maxImageSizeMB int64,
+) []string {
+	imageSvc := NewProductImageService(repo.NewProductImageRepository(db))
+	existingImages, err := imageSvc.GetByProductID(storeID, product.ID)
+	if err == nil && len(*existingImages) > 0 {
+		return []string{"image import skipped because the product already has images"}
+	}
+
+	warnings := make([]string, 0)
+	for index, imageURL := range imageURLs {
+		imageBytes, filename, contentType, err := downloadRemoteImage(imageURL, maxImageSizeMB)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("image %d could not be downloaded: %s", index+1, err))
+			continue
+		}
+
+		position := index
+		altText := strings.TrimSpace(defaultAltText)
+		var altTextPtr *string
+		if altText != "" {
+			altTextPtr = &altText
+		}
+
+		if _, err := imageUploadSvc.CreateFromBytes(ctx, imageSvc, storeID, product.ID, ProductImageUploadInput{
+			Filename:    filename,
+			ContentType: contentType,
+			Data:        imageBytes,
+			AltText:     altTextPtr,
+			Position:    &position,
+		}); err != nil {
+			warnings = append(warnings, fmt.Sprintf("image %d could not be imported: %s", index+1, err))
+		}
+	}
+
+	return warnings
+}
+
+func prefixLineWarnings(lineNum int, warnings []string) []string {
+	if len(warnings) == 0 {
+		return nil
+	}
+	prefixed := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		prefixed = append(prefixed, fmt.Sprintf("line %d: %s", lineNum, warning))
+	}
+	return prefixed
+}
+
+func downloadRemoteImage(rawURL string, maxImageSizeMB int64) ([]byte, string, string, error) {
+	parsedURL, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return nil, "", "", fmt.Errorf("invalid image URL")
+	}
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Get(parsedURL.String())
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", "", fmt.Errorf("remote server returned %s", resp.Status)
+	}
+
+	limitBytes := maxImageSizeMB * 1024 * 1024
+	reader := io.LimitReader(resp.Body, limitBytes+1)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if int64(len(data)) > limitBytes {
+		return nil, "", "", fmt.Errorf("remote image exceeds %dMB", maxImageSizeMB)
+	}
+
+	filename := path.Base(parsedURL.Path)
+	if filename == "" || filename == "." || filename == "/" {
+		filename = "imported-image"
+	}
+
+	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
+	return data, filename, contentType, nil
 }

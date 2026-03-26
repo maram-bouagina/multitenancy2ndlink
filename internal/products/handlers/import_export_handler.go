@@ -16,11 +16,13 @@ import (
 
 // ImportExportHandler handles CSV / Excel import and export for products and categories.
 type ImportExportHandler struct {
-	productRepo repo.ProductRepository
+	productRepo    repo.ProductRepository
+	imageUploadSvc services.ProductImageUploadService
+	maxImageSizeMB int64
 }
 
-func NewImportExportHandler(pr repo.ProductRepository) *ImportExportHandler {
-	return &ImportExportHandler{productRepo: pr}
+func NewImportExportHandler(pr repo.ProductRepository, imageUploadSvc services.ProductImageUploadService, maxImageSizeMB int64) *ImportExportHandler {
+	return &ImportExportHandler{productRepo: pr, imageUploadSvc: imageUploadSvc, maxImageSizeMB: maxImageSizeMB}
 }
 
 // getCategoryRepo creates a tenant-scoped CategoryRepository (same pattern as CategoryHandler).
@@ -76,7 +78,7 @@ func (h *ImportExportHandler) ImportProducts(c *fiber.Ctx) error {
 		return helpers.Fail(c, fiber.StatusBadRequest, fiber.NewError(fiber.StatusBadRequest, "file field is required"))
 	}
 
-	result, err := services.ImportProductsFromFile(db, storeID, fh, h.productRepo)
+	result, err := services.ImportProductsFromFile(db, storeID, fh, h.productRepo, h.imageUploadSvc, h.maxImageSizeMB)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusUnprocessableEntity, err)
 	}
@@ -146,7 +148,7 @@ func (h *ImportExportHandler) ProductImportTemplate(c *fiber.Ctx) error {
 		"price", "sale_price", "currency", "sku",
 		"track_stock", "stock", "low_stock_threshold",
 		"weight", "dimensions", "brand", "tax_class",
-		"category_slug", "category_name", "category_id",
+		"category_slug", "category_name", "category_id", "image_url", "image_urls",
 	}
 	return sendTemplate(c, "products_template", headers, format)
 }
@@ -197,4 +199,167 @@ func sendTemplate(c *fiber.Ctx, name string, headers []string, format string) er
 	c.Set("Content-Type", "text/csv; charset=utf-8")
 	c.Set("Content-Disposition", `attachment; filename="`+name+`.csv"`)
 	return c.Send(buf.Bytes())
+}
+
+// ── Tags export/import ────────────────────────────────────────────────────────
+
+// GET /api/stores/:storeId/tags/export?format=csv|xlsx
+func (h *ImportExportHandler) ExportTags(c *fiber.Ctx) error {
+	storeID, err := parseStoreID(c)
+	if err != nil {
+		return err
+	}
+	db := helpers.GetTenantDB(c)
+
+	switch c.Query("format", "csv") {
+	case "xlsx":
+		data, err := services.ExportTagsXLSX(db, storeID)
+		if err != nil {
+			return helpers.Fail(c, fiber.StatusInternalServerError, err)
+		}
+		c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+		c.Set("Content-Disposition", "attachment; filename=\"tags.xlsx\"")
+		return c.Send(data)
+	default:
+		data, err := services.ExportTagsCSV(db, storeID)
+		if err != nil {
+			return helpers.Fail(c, fiber.StatusInternalServerError, err)
+		}
+		c.Set("Content-Type", "text/csv; charset=utf-8")
+		c.Set("Content-Disposition", "attachment; filename=\"tags.csv\"")
+		return c.Send(data)
+	}
+}
+
+// POST /api/stores/:storeId/tags/import
+func (h *ImportExportHandler) ImportTags(c *fiber.Ctx) error {
+	storeID, err := parseStoreID(c)
+	if err != nil {
+		return err
+	}
+	db := helpers.GetTenantDB(c)
+
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return helpers.Fail(c, fiber.StatusBadRequest, fiber.NewError(fiber.StatusBadRequest, "file field is required"))
+	}
+	result, err := services.ImportTagsFromFile(db, storeID, fh)
+	if err != nil {
+		return helpers.Fail(c, fiber.StatusUnprocessableEntity, err)
+	}
+	return c.JSON(result)
+}
+
+// GET /api/stores/:storeId/tags/import/template
+func (h *ImportExportHandler) TagImportTemplate(c *fiber.Ctx) error {
+	headers := []string{"name", "slug", "color"}
+	return sendTemplate(c, "tags_template", headers, c.Query("format", "csv"))
+}
+
+// ── Collections export/import ─────────────────────────────────────────────────
+
+// GET /api/stores/:storeId/collections/export?format=csv|xlsx
+func (h *ImportExportHandler) ExportCollections(c *fiber.Ctx) error {
+	storeID, err := parseStoreID(c)
+	if err != nil {
+		return err
+	}
+	db := helpers.GetTenantDB(c)
+
+	switch c.Query("format", "csv") {
+	case "xlsx":
+		data, err := services.ExportCollectionsXLSX(db, storeID)
+		if err != nil {
+			return helpers.Fail(c, fiber.StatusInternalServerError, err)
+		}
+		c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+		c.Set("Content-Disposition", "attachment; filename=\"collections.xlsx\"")
+		return c.Send(data)
+	default:
+		data, err := services.ExportCollectionsCSV(db, storeID)
+		if err != nil {
+			return helpers.Fail(c, fiber.StatusInternalServerError, err)
+		}
+		c.Set("Content-Type", "text/csv; charset=utf-8")
+		c.Set("Content-Disposition", "attachment; filename=\"collections.csv\"")
+		return c.Send(data)
+	}
+}
+
+// POST /api/stores/:storeId/collections/import
+func (h *ImportExportHandler) ImportCollections(c *fiber.Ctx) error {
+	storeID, err := parseStoreID(c)
+	if err != nil {
+		return err
+	}
+	db := helpers.GetTenantDB(c)
+
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return helpers.Fail(c, fiber.StatusBadRequest, fiber.NewError(fiber.StatusBadRequest, "file field is required"))
+	}
+	result, err := services.ImportCollectionsFromFile(db, storeID, fh)
+	if err != nil {
+		return helpers.Fail(c, fiber.StatusUnprocessableEntity, err)
+	}
+	return c.JSON(result)
+}
+
+// GET /api/stores/:storeId/collections/import/template
+func (h *ImportExportHandler) CollectionImportTemplate(c *fiber.Ctx) error {
+	headers := []string{"name", "slug", "type", "rule"}
+	return sendTemplate(c, "collections_template", headers, c.Query("format", "csv"))
+}
+
+// ── Full catalog export ───────────────────────────────────────────────────────
+
+// GET /api/stores/:storeId/catalog/export
+func (h *ImportExportHandler) ExportFullCatalog(c *fiber.Ctx) error {
+	storeID, err := parseStoreID(c)
+	if err != nil {
+		return err
+	}
+	db := helpers.GetTenantDB(c)
+
+	data, err := services.ExportFullCatalogXLSX(db, storeID, h.productRepo)
+	if err != nil {
+		return helpers.Fail(c, fiber.StatusInternalServerError, err)
+	}
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", "attachment; filename=\"full_catalog.xlsx\"")
+	return c.Send(data)
+}
+
+// ── Purge catalog ─────────────────────────────────────────────────────────────
+
+// DELETE /api/stores/:storeId/catalog/purge
+func (h *ImportExportHandler) PurgeCatalog(c *fiber.Ctx) error {
+	storeID, err := parseStoreID(c)
+	if err != nil {
+		return err
+	}
+	db := helpers.GetTenantDB(c)
+
+	result, err := services.PurgeCatalog(db, storeID)
+	if err != nil {
+		return helpers.Fail(c, fiber.StatusInternalServerError, err)
+	}
+	return c.JSON(result)
+}
+
+// ── Duplicate detection ───────────────────────────────────────────────────────
+
+// GET /api/stores/:storeId/catalog/duplicates
+func (h *ImportExportHandler) FindDuplicates(c *fiber.Ctx) error {
+	storeID, err := parseStoreID(c)
+	if err != nil {
+		return err
+	}
+	db := helpers.GetTenantDB(c)
+
+	groups, err := services.FindDuplicates(db, storeID)
+	if err != nil {
+		return helpers.Fail(c, fiber.StatusInternalServerError, err)
+	}
+	return c.JSON(fiber.Map{"duplicates": groups, "total_groups": len(groups)})
 }

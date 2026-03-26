@@ -2,12 +2,10 @@ package models
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type Tenant struct {
-	ID            uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ID            string     `gorm:"type:varchar(64);primaryKey"                   json:"id"`
 	Email         string     `gorm:"type:varchar(255);uniqueIndex;not null"         json:"email"`
 	PasswordHash  string     `gorm:"type:varchar(255);not null"                    json:"-"`
 	FirstName     string     `gorm:"type:varchar(100);not null"                    json:"first_name"`
@@ -28,12 +26,12 @@ func (Tenant) TableName() string {
 }
 
 type PublicTenant struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	FirstName string    `json:"first_name"`
-	LastName  string    `json:"last_name"`
-	Plan      string    `json:"plan"`
-	Status    string    `json:"status"`
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Plan      string `json:"plan"`
+	Status    string `json:"status"`
 }
 
 func ToPublicTenant(t Tenant) PublicTenant {

@@ -4,7 +4,9 @@ import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ListPagination } from '@/components/dashboard/list-pagination';
 import { apiClient } from '@/lib/api/client';
 import { getApiErrorMessage } from '@/lib/api/errors';
 import { useCategories, useDeleteCategory, useUpdateCategory } from '@/lib/hooks/use-api';
@@ -15,11 +17,23 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Edit, Trash2, Download, Upload } from 'lucide-react';
+import { Edit, Trash2, Download, Upload, Search } from 'lucide-react';
+import { useLanguage } from '@/lib/hooks/use-language';
+
+function interpolate(template: string, values: Record<string, string | number>) {
+  return Object.entries(values).reduce(
+    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
+    template
+  );
+}
 
 export default function CategoriesPage() {
+  const PAGE_SIZE = 10;
   const { currentStore } = useAuth();
+  const { t } = useLanguage();
   const storeId = currentStore?.id ?? '';
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -32,15 +46,36 @@ export default function CategoriesPage() {
   const { data: categories, isLoading, refetch } = useCategories(storeId);
   const deleteCategoryMutation = useDeleteCategory();
   const updateCategoryMutation = useUpdateCategory();
+  const allCategories = categories ?? [];
+  const filteredCategories = allCategories.filter((category) => {
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+    return category.name.toLowerCase().includes(query) || category.slug.toLowerCase().includes(query);
+  });
+  const pageCount = Math.max(1, Math.ceil(filteredCategories.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const paginatedCategories = filteredCategories.slice(pageStart, pageStart + PAGE_SIZE);
+  const currentPageIds = paginatedCategories.map((category) => category.id);
+  const validSelectedCategoryIds = selectedCategoryIds.filter((id) => allCategories.some((category) => category.id === id));
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = downloadUrl;
+    anchor.download = filename;
+    anchor.click();
+    window.URL.revokeObjectURL(downloadUrl);
+  };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this category?')) return;
+    if (!confirm(t.categoriesPage.deleteConfirm)) return;
     try {
       setDeleteMessage('');
       await deleteCategoryMutation.mutateAsync({ storeId, categoryId: id });
       refetch();
     } catch (error: unknown) {
-      setDeleteMessage(getApiErrorMessage(error, 'Failed to delete category.'));
+      setDeleteMessage(getApiErrorMessage(error, t.categoriesPage.deleteFailed));
     }
   };
 
@@ -49,17 +84,23 @@ export default function CategoriesPage() {
     setIsExporting(true);
     try {
       const blob = await apiClient.exportCategories(storeId, format);
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `categories.${format === 'xlsx' ? 'xlsx' : 'csv'}`;
-      a.click();
-      window.URL.revokeObjectURL(downloadUrl);
+      downloadBlob(blob, `categories.${format === 'xlsx' ? 'xlsx' : 'csv'}`);
     } catch (error) {
       console.error('Export error:', error);
-      alert('Failed to export categories');
+      alert(t.categoriesPage.exportFailed);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleTemplateDownload = async (format: 'csv' | 'xlsx') => {
+    if (!storeId) return;
+    try {
+      const blob = await apiClient.downloadCategoryImportTemplate(storeId, format);
+      downloadBlob(blob, `categories_template.${format === 'xlsx' ? 'xlsx' : 'csv'}`);
+    } catch (error) {
+      console.error('Template download error:', error);
+      alert(t.categoriesPage.templateFailed);
     }
   };
 
@@ -79,9 +120,14 @@ export default function CategoriesPage() {
       const result = await apiClient.importCategories(storeId, file);
       const errors = Array.isArray(result.errors) ? result.errors : [];
       const warnings = Array.isArray(result.warnings) ? result.warnings : [];
-      const warningCount = Array.isArray(result.warnings) ? result.warnings.length : 0;
       setImportMessage(
-        `Imported: ${result.imported}, Updated: ${result.updated}, Skipped: ${result.skipped}${warningCount > 0 ? `, Warnings: ${warningCount}` : ''}${errors.length > 0 ? `, Errors: ${errors.length}` : ''}`
+        interpolate(t.categoriesPage.importSummary, {
+          imported: result.imported,
+          updated: result.updated,
+          skipped: result.skipped,
+          warnings: warnings.length,
+          errors: errors.length,
+        })
       );
       setImportErrors(errors);
       setImportWarnings(warnings);
@@ -89,7 +135,7 @@ export default function CategoriesPage() {
       refetch();
     } catch (error) {
       console.error('Import error:', error);
-      setImportMessage(error instanceof Error ? error.message : 'Import failed. Please check the file format.');
+      setImportMessage(getApiErrorMessage(error, t.categoriesPage.importFailed));
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -103,39 +149,48 @@ export default function CategoriesPage() {
   };
 
   const toggleSelectAll = (checked: boolean) => {
-    if (!categories) {
-      setSelectedCategoryIds([]);
+    if (!currentPageIds.length) {
       return;
     }
-    setSelectedCategoryIds(checked ? categories.map((c) => c.id) : []);
+
+    setSelectedCategoryIds((prev) => {
+      if (checked) {
+        return Array.from(new Set([...prev, ...currentPageIds]));
+      }
+      return prev.filter((id) => !currentPageIds.includes(id));
+    });
   };
 
   const handleDeleteSelected = async () => {
-    if (selectedCategoryIds.length === 0) return;
-    if (!confirm(`Delete ${selectedCategoryIds.length} selected category(ies)?`)) return;
+    if (validSelectedCategoryIds.length === 0) return;
+    if (!confirm(interpolate(t.categoriesPage.deleteSelectedConfirm, { count: validSelectedCategoryIds.length }))) return;
 
     try {
       setDeleteMessage('');
       await Promise.all(
-        selectedCategoryIds.map((categoryId) =>
+        validSelectedCategoryIds.map((categoryId) =>
           deleteCategoryMutation.mutateAsync({ storeId, categoryId })
         )
       );
       setSelectedCategoryIds([]);
       refetch();
     } catch (error: unknown) {
-      setDeleteMessage(getApiErrorMessage(error, 'Some categories could not be deleted.'));
+      setDeleteMessage(getApiErrorMessage(error, t.categoriesPage.deleteManyFailed));
     }
   };
 
   const handleBulkVisibilityUpdate = async () => {
-    if (!bulkVisibility || selectedCategoryIds.length === 0) return;
-    if (!confirm(`Set visibility to '${bulkVisibility}' for ${selectedCategoryIds.length} selected category(ies)?`)) return;
+    if (!bulkVisibility || validSelectedCategoryIds.length === 0) return;
+    const visibilityLabel = bulkVisibility === 'public' ? t.categoriesPage.bulkSetPublic : t.categoriesPage.bulkSetPrivate;
+    if (!confirm(interpolate(t.categoriesPage.bulkVisibilityConfirm, {
+      visibility: visibilityLabel,
+      count: validSelectedCategoryIds.length,
+    }))) return;
 
     try {
       setDeleteMessage('');
       await Promise.all(
-        selectedCategoryIds.map((categoryId) =>
+        validSelectedCategoryIds.map((categoryId) =>
           updateCategoryMutation.mutateAsync({
             storeId,
             categoryId,
@@ -147,7 +202,7 @@ export default function CategoriesPage() {
       setBulkVisibility('');
       refetch();
     } catch (error: unknown) {
-      setDeleteMessage(getApiErrorMessage(error, 'Some categories could not be updated.'));
+      setDeleteMessage(getApiErrorMessage(error, t.categoriesPage.bulkUpdateFailed));
     }
   };
 
@@ -164,8 +219,8 @@ export default function CategoriesPage() {
 
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Categories</h1>
-          <p className="text-gray-600">Manage your product categories.</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t.categoriesPage.title}</h1>
+          <p className="text-gray-600">{t.categoriesPage.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Export Dropdown */}
@@ -173,15 +228,32 @@ export default function CategoriesPage() {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" disabled={isExporting}>
                 <Download className="mr-2 h-4 w-4" />
-                Export
+                {t.categoriesPage.export}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => handleExport('csv')}>
-                Export as CSV
+                {t.categoriesPage.exportCsv}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleExport('xlsx')}>
-                Export as Excel
+                {t.categoriesPage.exportExcel}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Download className="mr-2 h-4 w-4" />
+                {t.categoriesPage.template}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => void handleTemplateDownload('csv')}>
+                {t.categoriesPage.templateCsv}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void handleTemplateDownload('xlsx')}>
+                {t.categoriesPage.templateExcel}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -193,14 +265,24 @@ export default function CategoriesPage() {
             disabled={isImporting}
           >
             <Upload className="mr-2 h-4 w-4" />
-            Import
+            {t.categoriesPage.import}
           </Button>
 
           <Button asChild>
-            <Link href="/dashboard/categories/new">Create Category</Link>
+            <Link href="/dashboard/categories/new">{t.categoriesPage.createCategory}</Link>
           </Button>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t.categoriesPage.importGuideTitle}</CardTitle>
+          <CardDescription>{t.categoriesPage.importGuideDesc}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-gray-600">
+          <p>{t.categoriesPage.importGuideHierarchy}</p>
+        </CardContent>
+      </Card>
 
       {/* Import Message */}
       {importMessage && (
@@ -214,7 +296,7 @@ export default function CategoriesPage() {
               setImportWarnings([]);
             }}
           >
-            Dismiss
+            {t.categoriesPage.dismiss}
           </button>
         </div>
       )}
@@ -222,13 +304,13 @@ export default function CategoriesPage() {
       {(importErrors.length > 0 || importWarnings.length > 0) && (
         <Card>
           <CardHeader>
-            <CardTitle>Import Details</CardTitle>
-            <CardDescription>Review skipped rows and unresolved values.</CardDescription>
+            <CardTitle>{t.categoriesPage.importDetailsTitle}</CardTitle>
+            <CardDescription>{t.categoriesPage.importDetailsDesc}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {importErrors.length > 0 && (
               <div>
-                <p className="text-sm font-semibold text-red-700">Errors</p>
+                <p className="text-sm font-semibold text-red-700">{t.categoriesPage.errors}</p>
                 <ul className="list-disc pl-5 text-sm text-red-700">
                   {importErrors.slice(0, 10).map((item, idx) => (
                     <li key={`err-${idx}`}>{item}</li>
@@ -238,7 +320,7 @@ export default function CategoriesPage() {
             )}
             {importWarnings.length > 0 && (
               <div>
-                <p className="text-sm font-semibold text-amber-700">Warnings</p>
+                <p className="text-sm font-semibold text-amber-700">{t.categoriesPage.warnings}</p>
                 <ul className="list-disc pl-5 text-sm text-amber-700">
                   {importWarnings.slice(0, 10).map((item, idx) => (
                     <li key={`warn-${idx}`}>{item}</li>
@@ -257,46 +339,56 @@ export default function CategoriesPage() {
             className="ml-2 font-semibold underline"
             onClick={() => setDeleteMessage('')}
           >
-            Dismiss
+            {t.categoriesPage.dismiss}
           </button>
         </div>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>All Categories</CardTitle>
-          <CardDescription>
-            Categories help organize your products.
-          </CardDescription>
+          <CardTitle>{t.categoriesPage.allCategories}</CardTitle>
+          <CardDescription>{t.categoriesPage.allCategoriesDesc}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-end pb-4">
+          <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
+            <div className="relative w-full max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                className="pl-9"
+                placeholder={t.categoriesPage.searchPlaceholder}
+              />
+            </div>
             <div className="flex items-center gap-2">
               <select
                 value={bulkVisibility}
                 onChange={(e) => setBulkVisibility(e.target.value)}
                 className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
               >
-                <option value="">Bulk visibility...</option>
-                <option value="public">Set Public</option>
-                <option value="private">Set Private</option>
+                <option value="">{t.categoriesPage.bulkVisibilityPlaceholder}</option>
+                <option value="public">{t.categoriesPage.bulkSetPublic}</option>
+                <option value="private">{t.categoriesPage.bulkSetPrivate}</option>
               </select>
               <Button
                 variant="outline"
                 size="sm"
-                disabled={!bulkVisibility || selectedCategoryIds.length === 0 || updateCategoryMutation.isPending}
+                disabled={!bulkVisibility || validSelectedCategoryIds.length === 0 || updateCategoryMutation.isPending}
                 onClick={handleBulkVisibilityUpdate}
               >
-                Apply to Selected
+                {t.categoriesPage.applySelected}
               </Button>
               <Button
                 variant="destructive"
                 size="sm"
-                disabled={selectedCategoryIds.length === 0 || deleteCategoryMutation.isPending}
+                disabled={validSelectedCategoryIds.length === 0 || deleteCategoryMutation.isPending}
                 onClick={handleDeleteSelected}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete Selected
+                {t.categoriesPage.deleteSelected}
               </Button>
             </div>
           </div>
@@ -308,23 +400,23 @@ export default function CategoriesPage() {
                   <TableHead className="w-10">
                     <input
                       type="checkbox"
-                      checked={!!categories?.length && selectedCategoryIds.length === categories.length}
+                      checked={currentPageIds.length > 0 && currentPageIds.every((id) => validSelectedCategoryIds.includes(id))}
                       onChange={(e) => toggleSelectAll(e.target.checked)}
                       aria-label="Select all categories"
                     />
                   </TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Slug</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>{t.categoriesPage.name}</TableHead>
+                  <TableHead>{t.categoriesPage.slug}</TableHead>
+                  <TableHead>{t.categoriesPage.actions}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {categories?.map((category) => (
+                {paginatedCategories.map((category) => (
                   <TableRow key={category.id}>
                     <TableCell>
                       <input
                         type="checkbox"
-                        checked={selectedCategoryIds.includes(category.id)}
+                        checked={validSelectedCategoryIds.includes(category.id)}
                         onChange={(e) => toggleCategorySelection(category.id, e.target.checked)}
                         aria-label={`Select category ${category.name}`}
                       />
@@ -336,7 +428,7 @@ export default function CategoriesPage() {
                         <Button variant="outline" size="sm" asChild>
                           <Link href={`/dashboard/categories/${category.id}`}>
                             <Edit className="mr-2 h-4 w-4" />
-                            Edit
+                            {t.categoriesPage.edit}
                           </Link>
                         </Button>
                         <Button
@@ -347,22 +439,31 @@ export default function CategoriesPage() {
                           disabled={deleteCategoryMutation.isPending}
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
+                          {t.categoriesPage.delete}
                         </Button>
                       </div>
                     </TableCell>
                   </TableRow>
                 ))}
-                {(!categories || categories.length === 0) && (
+                {filteredCategories.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} className="h-24 text-center">
-                      {isLoading ? 'Loading categories...' : 'No categories found.'}
+                      {isLoading ? t.categoriesPage.loading : t.categoriesPage.empty}
                     </TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
           </div>
+
+          <ListPagination
+            page={currentPage}
+            pageCount={pageCount}
+            summary={t.customersPage.pageOf.replace('{page}', String(currentPage)).replace('{total}', String(pageCount)) + ` · ${filteredCategories.length}`}
+            previousLabel={t.customersPage.previous}
+            nextLabel={t.customersPage.next}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
     </div>

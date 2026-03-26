@@ -23,7 +23,7 @@ type ProductService interface {
 	Delete(db *gorm.DB, id, storeID uuid.UUID) error
 	Clone(db *gorm.DB, id, storeID uuid.UUID, req dto.CloneProductRequest) (*dto.CloneProductResponse, error)
 	AdjustStock(db *gorm.DB, id, storeID uuid.UUID, req dto.AdjustStockRequest) (*dto.StockAdjustmentResponse, error)
-	ReserveStock(db *gorm.DB, id, storeID, userID uuid.UUID, req dto.StockReservationRequest) (*dto.StockReservationResponse, error)
+	ReserveStock(db *gorm.DB, id, storeID uuid.UUID, userID string, req dto.StockReservationRequest) (*dto.StockReservationResponse, error)
 }
 
 type productService struct {
@@ -232,66 +232,122 @@ func (s *productService) Clone(db *gorm.DB, id, storeID uuid.UUID, req dto.Clone
 	if err != nil {
 		return nil, err
 	}
-
-	// Create base new SKU
-	baseSKU := ""
-	if original.SKU != nil {
-		baseSKU = *original.SKU
-	}
-	if req.SKUSuffix != nil && *req.SKUSuffix != "" {
-		baseSKU += *req.SKUSuffix
-	} else {
-		baseSKU += "-CLONE"
+	cloneTitle := strings.TrimSpace(req.Title)
+	if cloneTitle == "" {
+		return nil, errors.New("title is required")
 	}
 
-	// Generate unique SKU
-	newSKU := s.generateUniqueSKU(db, baseSKU, storeID)
+	var clonedDetail *dto.ProductDetailResponse
 
-	// Generate unique slug
-	baseSlug := resolveSlug(nil, req.Title)
-	newSlug := s.generateUniqueSlug(db, baseSlug, storeID)
+	err = db.Transaction(func(tx *gorm.DB) error {
+		var newSKU *string
+		if original.SKU != nil {
+			trimmedSKU := strings.TrimSpace(*original.SKU)
+			if trimmedSKU != "" {
+				suffix := "-COPY"
+				if req.SKUSuffix != nil && strings.TrimSpace(*req.SKUSuffix) != "" {
+					suffix = strings.TrimSpace(*req.SKUSuffix)
+				}
+				candidate := trimmedSKU + suffix
+				resolved := s.generateUniqueSKU(tx, candidate, storeID)
+				newSKU = &resolved
+			}
+		}
 
-	// Create cloned product
-	cloned := &models.Product{
-		ID:                uuid.New(),
-		StoreID:           original.StoreID,
-		CategoryID:        original.CategoryID,
-		Title:             req.Title,
-		Slug:              newSlug,
-		Description:       original.Description,
-		Status:            models.StatusDraft,
-		Visibility:        original.Visibility,
-		Price:             original.Price,
-		SalePrice:         original.SalePrice,
-		SaleStart:         original.SaleStart,
-		SaleEnd:           original.SaleEnd,
-		Currency:          original.Currency,
-		SKU:               &newSKU,
-		Stock:             original.Stock,
-		TrackStock:        original.TrackStock,
-		LowStockThreshold: original.LowStockThreshold,
-	}
+		newSlug := s.generateUniqueSlug(tx, resolveSlug(nil, cloneTitle), storeID)
 
-	if err := s.repo.Create(db, cloned); err != nil {
+		cloned := &models.Product{
+			ID:                uuid.New(),
+			StoreID:           original.StoreID,
+			CategoryID:        original.CategoryID,
+			Title:             cloneTitle,
+			Slug:              newSlug,
+			Description:       original.Description,
+			Status:            models.StatusDraft,
+			Visibility:        original.Visibility,
+			Price:             original.Price,
+			SalePrice:         original.SalePrice,
+			SaleStart:         original.SaleStart,
+			SaleEnd:           original.SaleEnd,
+			Currency:          original.Currency,
+			SKU:               newSKU,
+			TrackStock:        original.TrackStock,
+			Stock:             original.Stock,
+			LowStockThreshold: original.LowStockThreshold,
+			Weight:            original.Weight,
+			Dimensions:        original.Dimensions,
+			Brand:             original.Brand,
+			TaxClass:          original.TaxClass,
+			PublishedAt:       nil,
+		}
+
+		if err := s.repo.Create(tx, cloned); err != nil {
+			return err
+		}
+
+		if len(original.Tags) > 0 {
+			if err := tx.Model(cloned).Association("Tags").Append(original.Tags); err != nil {
+				return err
+			}
+		}
+
+		if len(original.Collections) > 0 {
+			if err := tx.Model(cloned).Association("Collections").Append(original.Collections); err != nil {
+				return err
+			}
+		}
+
+		imageResponses := make([]dto.ProductImageResponse, 0)
+		if req.IncludeImages {
+			imageRepo := repo.NewProductImageRepository(tx)
+			originalImages, err := imageRepo.GetByProductID(original.ID)
+			if err != nil {
+				return err
+			}
+
+			for _, image := range *originalImages {
+				clonedImage := &models.ProductImage{
+					ID:           uuid.New(),
+					ProductID:    cloned.ID,
+					URL:          image.URL,
+					URLThumbnail: image.URLThumbnail,
+					URLMedium:    image.URLMedium,
+					URLLarge:     image.URLLarge,
+					AltText:      image.AltText,
+					Caption:      image.Caption,
+					Position:     image.Position,
+					FileSize:     image.FileSize,
+					FileType:     image.FileType,
+				}
+
+				if err := imageRepo.Create(clonedImage); err != nil {
+					return err
+				}
+
+				imageResponses = append(imageResponses, *toProductImageResponse(clonedImage))
+			}
+		}
+
+		reloaded, err := s.findOrFail(tx, cloned.ID, storeID)
+		if err != nil {
+			return err
+		}
+
+		clonedDetail = &dto.ProductDetailResponse{
+			ProductResponse: *toProductResponse(reloaded),
+			Images:          imageResponses,
+		}
+
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	// If requested, copy images
-	if req.IncludeImages {
-		// This would require image repository access
-		// For now, we'll skip image copying
-		_ = req.IncludeImages
-	}
-
-	resp := &dto.CloneProductResponse{
-		ClonedProduct: &dto.ProductDetailResponse{
-			ProductResponse: *toProductResponse(cloned),
-			// Images, tags, attributes would be populated here
-		},
-		Message: "Product cloned successfully",
-	}
-
-	return resp, nil
+	return &dto.CloneProductResponse{
+		ClonedProduct: clonedDetail,
+		Message:       "Product cloned successfully",
+	}, nil
 }
 
 // Adjust product stock
@@ -328,7 +384,7 @@ func (s *productService) AdjustStock(db *gorm.DB, id, storeID uuid.UUID, req dto
 }
 
 // Reserve product stock
-func (s *productService) ReserveStock(db *gorm.DB, id, storeID, userID uuid.UUID, req dto.StockReservationRequest) (*dto.StockReservationResponse, error) {
+func (s *productService) ReserveStock(db *gorm.DB, id, storeID uuid.UUID, userID string, req dto.StockReservationRequest) (*dto.StockReservationResponse, error) {
 	product, err := s.findOrFail(db, id, storeID)
 	if err != nil {
 		return nil, err

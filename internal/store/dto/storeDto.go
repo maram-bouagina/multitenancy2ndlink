@@ -16,6 +16,7 @@ type CreateStoreRequest struct {
 	ThemeFontFamily       *string `json:"theme_font_family"`
 	StorefrontLayoutDraft *string `json:"storefront_layout_draft"`
 	TaxNumber             *string `json:"tax_number"`
+	MaintenanceMessage    *string `json:"maintenance_message"`
 }
 
 type UpdateStoreRequest struct {
@@ -33,7 +34,14 @@ type UpdateStoreRequest struct {
 	ThemeFontFamily       *string `json:"theme_font_family"`
 	StorefrontLayoutDraft *string `json:"storefront_layout_draft"`
 	TaxNumber             *string `json:"tax_number"`
+	MaintenanceMessage    *string `json:"maintenance_message"`
 	Status                *string `json:"status" validate:"omitempty,oneof=active suspended inactive"`
+}
+
+// UpdateStoreStatusRequest is used by the dedicated PATCH /stores/:id/status endpoint.
+// Merchants may only toggle between active and inactive; suspended is platform-admin-only.
+type UpdateStoreStatusRequest struct {
+	Status string `json:"status" validate:"required,oneof=active inactive"`
 }
 
 type PublishStoreCustomizationRequest struct {
@@ -60,5 +68,6 @@ type StoreResponse struct {
 	StorefrontLayoutPublished string  `json:"storefront_layout_published"`
 	ThemeVersion              int     `json:"theme_version"`
 	TaxNumber                 *string `json:"tax_number"`
+	MaintenanceMessage        *string `json:"maintenance_message"`
 	Status                    string  `json:"status"`
 }

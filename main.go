@@ -29,6 +29,7 @@ func main() {
 	// Enable CORS for local development (Next.js running on localhost:3000)
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     "http://localhost:3000",
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		AllowCredentials: true,
 	}))
 

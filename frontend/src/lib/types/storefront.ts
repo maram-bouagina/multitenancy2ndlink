@@ -84,6 +84,8 @@ export interface CollectionPage {
 export interface ProductDetail {
   product: ProductPublic;
   related: ProductPublic[];
+  upsell_products?: ProductPublic[];
+  cross_sell_products?: ProductPublic[];
 }
 
 export type StorefrontSectionType =

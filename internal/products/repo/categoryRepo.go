@@ -13,9 +13,11 @@ type CategoryRepository interface {
 	Create(c *models.Category) error
 	FindByID(id, storeID uuid.UUID) (*models.Category, error)
 	FindRoots(storeID uuid.UUID) ([]*models.Category, error)
+	FindChildren(parentID, storeID uuid.UUID) ([]*models.Category, error)
 	Update(c *models.Category) error
 	Delete(id, storeID uuid.UUID) error
 	HasProducts(id uuid.UUID) (bool, error)
+	NullifyProductCategory(categoryID uuid.UUID) error
 	SlugExists(slug string, storeID uuid.UUID, excludeID *uuid.UUID) (bool, error)
 }
 
@@ -60,10 +62,25 @@ func (r *categoryRepository) Update(c *models.Category) error {
 
 func (r *categoryRepository) Delete(id, storeID uuid.UUID) error {
 	result := r.db.Where("id = ? AND store_id = ?", id, storeID).Delete(&models.Category{})
+	if result.Error != nil {
+		return result.Error
+	}
 	if result.RowsAffected == 0 {
 		return errors.New("category not found")
 	}
-	return result.Error
+	return nil
+}
+
+func (r *categoryRepository) FindChildren(parentID, storeID uuid.UUID) ([]*models.Category, error) {
+	var cats []*models.Category
+	err := r.db.Where("parent_id = ? AND store_id = ?", parentID, storeID).Find(&cats).Error
+	return cats, err
+}
+
+func (r *categoryRepository) NullifyProductCategory(categoryID uuid.UUID) error {
+	return r.db.Model(&models.Product{}).
+		Where("category_id = ?", categoryID).
+		Update("category_id", nil).Error
 }
 
 func (r *categoryRepository) HasProducts(id uuid.UUID) (bool, error) {

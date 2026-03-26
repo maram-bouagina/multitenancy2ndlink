@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"io"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -29,7 +30,12 @@ func (h *MediaHandler) Serve(c *fiber.Ctx) error {
 	}
 	defer reader.Close()
 
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return c.SendStatus(fiber.StatusNotFound)
+	}
+
 	c.Set("Cache-Control", "public, max-age=31536000, immutable")
-	c.Type(contentType)
-	return c.SendStream(reader)
+	c.Set("Content-Type", contentType)
+	return c.Send(content)
 }

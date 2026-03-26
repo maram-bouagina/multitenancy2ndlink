@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 
 	"multitenancypfe/internal/auth/dto"
 	"multitenancypfe/internal/auth/services"
@@ -70,7 +69,7 @@ func (h *TenantHandler) GetAll(c *fiber.Ctx) error {
 }
 
 func (h *TenantHandler) GetByID(c *fiber.Ctx) error {
-	id, err := helpers.ParseID(c)
+	id, err := helpers.ParseStringID(c)
 	if err != nil {
 		return err
 	}
@@ -82,7 +81,7 @@ func (h *TenantHandler) GetByID(c *fiber.Ctx) error {
 }
 
 func (h *TenantHandler) Update(c *fiber.Ctx) error {
-	id, err := helpers.ParseID(c)
+	id, err := helpers.ParseStringID(c)
 	if err != nil {
 		return err
 	}
@@ -98,7 +97,7 @@ func (h *TenantHandler) Update(c *fiber.Ctx) error {
 }
 
 func (h *TenantHandler) Delete(c *fiber.Ctx) error {
-	id, err := helpers.ParseID(c)
+	id, err := helpers.ParseStringID(c)
 	if err != nil {
 		return err
 	}
@@ -148,12 +147,7 @@ func (h *TenantAuthHandler) Me(c *fiber.Ctx) error {
 		return helpers.Fail(c, fiber.StatusUnauthorized, fiber.NewError(fiber.StatusUnauthorized, "missing user in context"))
 	}
 
-	tenantID, err := uuid.Parse(userID)
-	if err != nil {
-		return helpers.Fail(c, fiber.StatusUnauthorized, fiber.NewError(fiber.StatusUnauthorized, "invalid user id"))
-	}
-
-	tenant, err := h.svc.GetTenantByID(tenantID)
+	tenant, err := h.svc.GetTenantByID(userID)
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusUnauthorized, err)
 	}
@@ -176,7 +170,7 @@ func (h *TenantAuthHandler) Logout(c *fiber.Ctx) error {
 }
 
 func (h *TenantHandler) Restore(c *fiber.Ctx) error {
-	id, err := helpers.ParseID(c)
+	id, err := helpers.ParseStringID(c)
 	if err != nil {
 		return err
 	}

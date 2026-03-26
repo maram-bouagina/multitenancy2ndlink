@@ -8,6 +8,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	customerModels "multitenancypfe/internal/customers/models"
 	productModels "multitenancypfe/internal/products/models"
 	storeModel "multitenancypfe/internal/store/models"
 )
@@ -15,16 +16,25 @@ import (
 var tenantSchemaReady sync.Map
 
 func autoMigrateTenantModels(db *gorm.DB) error {
+	// Widen avatar column if it was created as varchar(500) in an older schema.
+	_ = db.Exec(`ALTER TABLE clients ALTER COLUMN avatar TYPE text`).Error
+
 	if err := db.AutoMigrate(
 		&storeModel.Store{},
 		&productModels.Product{},
 		&productModels.Category{},
 		&productModels.Collection{},
 		&productModels.ProductImage{},
+		&productModels.ProductRelation{},
 		&productModels.StockReservation{},
 		&productModels.StockAdjustmentLog{},
 		&productModels.Tag{},
 		&productModels.ProductTag{},
+		&customerModels.Customer{},
+		&customerModels.CustomerAddress{},
+		&customerModels.CustomerGroup{},
+		&customerModels.CustomerGroupMember{},
+		&storeModel.NewsletterSubscriber{},
 	); err != nil {
 		return err
 	}
@@ -37,13 +47,20 @@ func autoMigrateTenantModels(db *gorm.DB) error {
 }
 
 func ensureProductSlugCompositeUniqueIndex(db *gorm.DB) error {
-	// Legacy schemas may have idx_slug_store on (slug) only or as non-partial unique.
-	// Keep uniqueness only for active rows to allow slug reuse after soft delete.
-	if err := db.Exec(`DROP INDEX IF EXISTS idx_slug_store`).Error; err != nil {
-		return fmt.Errorf("drop legacy idx_slug_store failed: %w", err)
-	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_slug_store ON products (store_id, slug) WHERE deleted_at IS NULL`).Error; err != nil {
-		return fmt.Errorf("create partial idx_slug_store failed: %w", err)
+	// Drop any legacy idx_slug_store that may have a different definition,
+	// then recreate as a partial unique index for active rows only.
+	// Use DO block to silently handle cases where the index is already correct.
+	err := db.Exec(`
+		DO $$
+		BEGIN
+			EXECUTE 'DROP INDEX IF EXISTS idx_slug_store';
+			EXECUTE 'CREATE UNIQUE INDEX idx_slug_store ON products (store_id, slug) WHERE deleted_at IS NULL';
+		EXCEPTION WHEN duplicate_table THEN
+			NULL;
+		END $$;
+	`).Error
+	if err != nil {
+		return fmt.Errorf("ensure idx_slug_store failed: %w", err)
 	}
 	return nil
 }
@@ -100,9 +117,33 @@ func EnsureTenantSchemaUpToDate(tenantID string) error {
 		return nil
 	}
 
-	scopedDB := DB.Session(&gorm.Session{})
-	if err := scopedDB.Exec(fmt.Sprintf(`SET search_path = "%s", public`, schema)).Error; err != nil {
+	// Ensure the schema itself exists (lazy creation for Better Auth users)
+	if err := DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %q", schema)).Error; err != nil {
+		return fmt.Errorf("create schema failed: %w", err)
+	}
+
+	// Use a dedicated connection so SET search_path and AutoMigrate
+	// run on the same connection (not random pool connections).
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return fmt.Errorf("get sql.DB failed: %w", err)
+	}
+
+	conn, err := sqlDB.Conn(context.Background())
+	if err != nil {
+		return fmt.Errorf("get connection failed: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(context.Background(),
+		fmt.Sprintf("SET search_path TO %q, public", schema),
+	); err != nil {
 		return fmt.Errorf("set search_path failed: %w", err)
+	}
+
+	scopedDB, err := gorm.Open(postgres.New(postgres.Config{Conn: conn}), &gorm.Config{})
+	if err != nil {
+		return fmt.Errorf("open scoped db failed: %w", err)
 	}
 
 	if err := autoMigrateTenantModels(scopedDB); err != nil {

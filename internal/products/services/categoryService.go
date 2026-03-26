@@ -118,12 +118,24 @@ func (s *categoryService) Delete(id, storeID uuid.UUID) error {
 		return err
 	}
 
-	hasProducts, err := s.repo.HasProducts(id)
+	return s.deleteRecursive(id, storeID)
+}
+
+// deleteRecursive deletes a category and all its descendants, nullifying
+// product references at each level so FK constraints don't block the delete.
+func (s *categoryService) deleteRecursive(id, storeID uuid.UUID) error {
+	children, err := s.repo.FindChildren(id, storeID)
 	if err != nil {
 		return err
 	}
-	if hasProducts {
-		return errors.New("cannot delete category with products")
+	for _, child := range children {
+		if err := s.deleteRecursive(child.ID, storeID); err != nil {
+			return err
+		}
+	}
+
+	if err := s.repo.NullifyProductCategory(id); err != nil {
+		return err
 	}
 
 	return s.repo.Delete(id, storeID)

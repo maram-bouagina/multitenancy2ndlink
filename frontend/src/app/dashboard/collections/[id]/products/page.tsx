@@ -11,11 +11,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { getApiErrorMessage } from '@/lib/api/errors';
 import { useAddProductToCollection, useCollection, useCollectionProducts, useProducts, useRemoveProductFromCollection } from '@/lib/hooks/use-api';
 import { useAuth } from '@/lib/hooks/use-auth';
+import { useLanguage } from '@/lib/hooks/use-language';
 
 export default function CollectionProductsPage() {
   const params = useParams();
   const collectionId = Array.isArray(params?.id) ? params.id[0] : (params?.id || '');
   const { currentStore } = useAuth();
+  const { t } = useLanguage();
   const storeId = currentStore?.id ?? '';
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -48,7 +50,7 @@ export default function CollectionProductsPage() {
       setError('');
       await addProductMutation.mutateAsync({ storeId, collectionId, productId });
     } catch (error: unknown) {
-      setError(getApiErrorMessage(error, 'Failed to add product to collection'));
+      setError(getApiErrorMessage(error, t.collectionProductsPage.addFailed));
     }
   };
 
@@ -57,16 +59,16 @@ export default function CollectionProductsPage() {
       setError('');
       await removeProductMutation.mutateAsync({ storeId, collectionId, productId });
     } catch (error: unknown) {
-      setError(getApiErrorMessage(error, 'Failed to remove product from collection'));
+      setError(getApiErrorMessage(error, t.collectionProductsPage.removeFailed));
     }
   };
 
   if (isLoadingCollection) {
-    return <div className="p-6 text-gray-600">Loading collection...</div>;
+    return <div className="p-6 text-gray-600">{t.collectionProductsPage.loading}</div>;
   }
 
   if (!collection) {
-    return <div className="p-6 text-red-600">Collection not found.</div>;
+    return <div className="p-6 text-red-600">{t.collectionProductsPage.notFound}</div>;
   }
 
   return (
@@ -76,17 +78,17 @@ export default function CollectionProductsPage() {
           <h1 className="text-2xl font-bold text-gray-900">{collection.name}</h1>
           <p className="text-gray-600">
             {collection.type === 'automatic'
-              ? 'Automatic collection. Products are included when they match the rule.'
-              : 'Manual collection. Add or remove products from this collection.'}
+              ? t.collectionProductsPage.automaticDesc
+              : t.collectionProductsPage.manualDesc}
           </p>
-          {collection.rule && <p className="mt-1 text-sm text-gray-500">Rule: {collection.rule}</p>}
+          {collection.rule && <p className="mt-1 text-sm text-gray-500">{t.collectionProductsPage.rule}: {collection.rule}</p>}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
-            <Link href={`/dashboard/collections/${collectionId}`}>Collection settings</Link>
+            <Link href={`/dashboard/collections/${collectionId}`}>{t.collectionProductsPage.collectionSettings}</Link>
           </Button>
           <Button variant="outline" asChild>
-            <Link href="/dashboard/collections">Back to collections</Link>
+            <Link href="/dashboard/collections">{t.collectionProductsPage.back}</Link>
           </Button>
         </div>
       </div>
@@ -99,19 +101,21 @@ export default function CollectionProductsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Search products</CardTitle>
-          <CardDescription>Filter the assigned and available lists by title, slug, or brand.</CardDescription>
+          <CardTitle>{t.collectionProductsPage.searchTitle}</CardTitle>
+          <CardDescription>{t.collectionProductsPage.searchDesc}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products..." />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t.collectionProductsPage.searchPlaceholder} />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Products in collection</CardTitle>
+          <CardTitle>{t.collectionProductsPage.productsInCollection}</CardTitle>
           <CardDescription>
-            {collectionProducts ? `${collectionProducts.total} product(s) currently in this collection.` : 'Loading collection products...'}
+            {collectionProducts
+              ? t.collectionProductsPage.productsCount.replace('{count}', String(collectionProducts.total))
+              : t.collectionProductsPage.loadingCollectionProducts}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -119,10 +123,10 @@ export default function CollectionProductsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Slug</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>{t.collectionProductsPage.product}</TableHead>
+                  <TableHead>{t.collectionProductsPage.slug}</TableHead>
+                  <TableHead>{t.collectionProductsPage.status}</TableHead>
+                  <TableHead>{t.collectionProductsPage.actions}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -134,11 +138,11 @@ export default function CollectionProductsPage() {
                     <TableCell>
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" asChild>
-                          <Link href={`/dashboard/products/${product.id}`}>View product</Link>
+                          <Link href={`/dashboard/products/${product.id}`}>{t.collectionProductsPage.viewProduct}</Link>
                         </Button>
                         {collection.type === 'manual' && (
                           <Button variant="ghost" size="sm" className="text-red-600" onClick={() => handleRemove(product.id)} disabled={removeProductMutation.isPending}>
-                            Remove
+                            {t.collectionProductsPage.remove}
                           </Button>
                         )}
                       </div>
@@ -148,7 +152,7 @@ export default function CollectionProductsPage() {
                 {filteredAssignedProducts.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} className="h-24 text-center text-gray-500">
-                      {isLoadingProducts ? 'Loading collection products...' : 'No products in this collection yet.'}
+                      {isLoadingProducts ? t.collectionProductsPage.loadingCollectionProducts : t.collectionProductsPage.emptyAssigned}
                     </TableCell>
                   </TableRow>
                 )}
@@ -161,18 +165,18 @@ export default function CollectionProductsPage() {
       {collection.type === 'manual' && (
         <Card>
           <CardHeader>
-            <CardTitle>Add products</CardTitle>
-            <CardDescription>Choose products not already in this collection.</CardDescription>
+            <CardTitle>{t.collectionProductsPage.addProducts}</CardTitle>
+            <CardDescription>{t.collectionProductsPage.addProductsDesc}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Slug</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>{t.collectionProductsPage.product}</TableHead>
+                    <TableHead>{t.collectionProductsPage.slug}</TableHead>
+                    <TableHead>{t.collectionProductsPage.status}</TableHead>
+                    <TableHead>{t.collectionProductsPage.actions}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -183,7 +187,7 @@ export default function CollectionProductsPage() {
                       <TableCell className="text-sm text-gray-600">{product.status}</TableCell>
                       <TableCell>
                         <Button size="sm" onClick={() => handleAdd(product.id)} disabled={addProductMutation.isPending}>
-                          Add
+                          {t.collectionProductsPage.add}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -191,7 +195,7 @@ export default function CollectionProductsPage() {
                   {filteredAvailableProducts.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={4} className="h-24 text-center text-gray-500">
-                        No more products available to add.
+                        {t.collectionProductsPage.emptyAvailable}
                       </TableCell>
                     </TableRow>
                   )}

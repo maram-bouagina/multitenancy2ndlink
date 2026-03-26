@@ -3,7 +3,6 @@ package services
 import (
 	"errors"
 
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
 	"multitenancypfe/internal/auth/dto"
@@ -17,11 +16,11 @@ import (
 
 type TenantService interface {
 	Create(req dto.CreateTenantRequest) (*dto.TenantResponse, error)
-	GetByID(id uuid.UUID) (*dto.TenantResponse, error)
+	GetByID(id string) (*dto.TenantResponse, error)
 	GetAll() ([]dto.TenantResponse, error)
-	Update(id uuid.UUID, req dto.UpdateTenantRequest) (*dto.TenantResponse, error)
-	Delete(id uuid.UUID) error
-	Restore(id uuid.UUID) error
+	Update(id string, req dto.UpdateTenantRequest) (*dto.TenantResponse, error)
+	Delete(id string) error
+	Restore(id string) error
 }
 
 type tenantService struct {
@@ -80,13 +79,13 @@ func (s *tenantService) Create(req dto.CreateTenantRequest) (*dto.TenantResponse
 		return nil, err
 	}
 
-	if err := database.CreateTenantSchema(tenant.ID.String()); err != nil {
+	if err := database.CreateTenantSchema(tenant.ID); err != nil {
 		return nil, err
 	}
 
 	return toTenantResponse(tenant), nil
 }
-func (s *tenantService) GetByID(id uuid.UUID) (*dto.TenantResponse, error) {
+func (s *tenantService) GetByID(id string) (*dto.TenantResponse, error) {
 	tenant, err := s.findOrFail(id)
 	if err != nil {
 		return nil, err
@@ -106,7 +105,7 @@ func (s *tenantService) GetAll() ([]dto.TenantResponse, error) {
 	return result, nil
 }
 
-func (s *tenantService) Update(id uuid.UUID, req dto.UpdateTenantRequest) (*dto.TenantResponse, error) {
+func (s *tenantService) Update(id string, req dto.UpdateTenantRequest) (*dto.TenantResponse, error) {
 	tenant, err := s.findOrFail(id)
 	if err != nil {
 		return nil, err
@@ -137,7 +136,7 @@ func (s *tenantService) Update(id uuid.UUID, req dto.UpdateTenantRequest) (*dto.
 	return toTenantResponse(tenant), nil
 }
 
-func (s *tenantService) Delete(id uuid.UUID) error {
+func (s *tenantService) Delete(id string) error {
 	if _, err := s.findOrFail(id); err != nil {
 		return err
 	}
@@ -148,7 +147,7 @@ func (s *tenantService) Delete(id uuid.UUID) error {
 
 type TenantAuthService interface {
 	Login(req dto.LoginRequest) (*dto.LoginResponse, error)
-	GetTenantByID(id uuid.UUID) (*dto.TenantResponse, error)
+	GetTenantByID(id string) (*dto.TenantResponse, error)
 }
 
 type tenantAuthService struct {
@@ -172,7 +171,7 @@ func (s *tenantAuthService) Login(req dto.LoginRequest) (*dto.LoginResponse, err
 		return nil, errors.New("invalid credentials")
 	}
 
-	token, err := jwt.Generate(tenant.ID.String(), "tenant")
+	token, err := jwt.Generate(tenant.ID, "tenant")
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +182,7 @@ func (s *tenantAuthService) Login(req dto.LoginRequest) (*dto.LoginResponse, err
 	}, nil
 }
 
-func (s *tenantAuthService) GetTenantByID(id uuid.UUID) (*dto.TenantResponse, error) {
+func (s *tenantAuthService) GetTenantByID(id string) (*dto.TenantResponse, error) {
 	tenant, err := s.repo.FindByID(id)
 	if err != nil {
 		return nil, err
@@ -197,7 +196,7 @@ func (s *tenantAuthService) GetTenantByID(id uuid.UUID) (*dto.TenantResponse, er
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-func (s *tenantService) findOrFail(id uuid.UUID) (*models.Tenant, error) {
+func (s *tenantService) findOrFail(id string) (*models.Tenant, error) {
 	tenant, err := s.repo.FindByID(id)
 	if err != nil {
 		return nil, err
@@ -210,7 +209,7 @@ func (s *tenantService) findOrFail(id uuid.UUID) (*models.Tenant, error) {
 
 func toTenantResponse(t *models.Tenant) *dto.TenantResponse {
 	return &dto.TenantResponse{
-		ID:            t.ID.String(),
+		ID:            t.ID,
 		Email:         t.Email,
 		FirstName:     t.FirstName,
 		LastName:      t.LastName,
@@ -222,6 +221,6 @@ func toTenantResponse(t *models.Tenant) *dto.TenantResponse {
 	}
 }
 
-func (s *tenantService) Restore(id uuid.UUID) error {
+func (s *tenantService) Restore(id string) error {
 	return s.repo.Restore(id)
 }

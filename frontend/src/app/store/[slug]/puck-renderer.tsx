@@ -3,7 +3,8 @@
 import { Render, type Data } from "@puckeditor/core";
 import "@puckeditor/core/puck.css";
 import {
-  puckConfig,
+  buildPuckConfig,
+  createCatalogFieldOptions,
   setStorefrontData,
   getDefaultPuckData,
   type StorefrontData,
@@ -14,13 +15,14 @@ import type {
   CategoryPublic,
   CollectionPublic,
 } from "@/lib/types/storefront";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 
 interface Props {
   store: StorePublic;
   products: ProductPublic[];
   categories: CategoryPublic[];
   collections: CollectionPublic[];
+  layoutOverride?: string;
 }
 
 export function PuckStorefrontRenderer({
@@ -28,22 +30,26 @@ export function PuckStorefrontRenderer({
   products,
   categories,
   collections,
+  layoutOverride,
 }: Props) {
-  const [data, setData] = useState<Data | null>(null);
+  const config = useMemo(
+    () => buildPuckConfig(createCatalogFieldOptions({ store, products, categories, collections }), store.language === "ar" ? "ar" : store.language === "fr" ? "fr" : "en"),
+    [categories, collections, products, store],
+  );
 
   useEffect(() => {
-    // Inject storefront data for Puck components
     setStorefrontData({
       store,
       products,
       categories,
       collections,
     } satisfies StorefrontData);
+  }, [categories, collections, products, store]);
 
-    // Parse the published layout
+  const data = useMemo(() => {
     let parsed: Data | null = null;
     try {
-      const raw = store.storefront_layout;
+      const raw = layoutOverride ?? store.storefront_layout;
       if (raw) {
         const obj = JSON.parse(raw);
         if (obj && typeof obj === "object" && Array.isArray(obj.content)) {
@@ -51,13 +57,12 @@ export function PuckStorefrontRenderer({
         }
       }
     } catch {
-      /* ignore */
+      parsed = null;
     }
 
-    setData(parsed && parsed.content.length > 0 ? parsed : getDefaultPuckData());
-  }, [store, products, categories, collections]);
+    const lang = store.language === "ar" ? "ar" : store.language === "fr" ? "fr" : "en";
+    return parsed && parsed.content.length > 0 ? parsed : getDefaultPuckData(lang);
+  }, [layoutOverride, store.language, store.storefront_layout]);
 
-  if (!data) return null;
-
-  return <Render config={puckConfig} data={data} />;
+  return <Render config={config} data={data} />;
 }

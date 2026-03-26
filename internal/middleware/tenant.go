@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"multitenancypfe/internal/database"
@@ -22,14 +24,30 @@ func TenantDB() fiber.Handler {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "tenant schema migration failed: " + err.Error()})
 		}
 
-		// Get a new GORM session from the global database
-		// Each request gets its own scoped DB session
-		scopedDB := database.DB.Session(&gorm.Session{})
+		// Pin a single connection from the pool so that SET search_path
+		// applies to ALL queries in the request (including Preloads),
+		// without wrapping everything in a transaction — individual row
+		// failures (e.g. during import) won't poison subsequent queries.
+		sqlDB, err := database.DB.DB()
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "get sql.DB failed"})
+		}
 
-		// Set search_path for this connection to prioritize tenant schema
-		// Schema names with special characters must be quoted
-		if err := scopedDB.Exec(fmt.Sprintf(`SET search_path = "%s", public`, schema)).Error; err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "set search_path failed: " + err.Error()})
+		conn, err := sqlDB.Conn(context.Background())
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "acquire connection failed"})
+		}
+		defer conn.Close()
+
+		if _, err := conn.ExecContext(context.Background(),
+			fmt.Sprintf("SET search_path TO %q, public", schema),
+		); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "set search_path failed"})
+		}
+
+		scopedDB, err := gorm.Open(postgres.New(postgres.Config{Conn: conn}), &gorm.Config{})
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "open scoped db failed"})
 		}
 
 		c.Locals("tenantDB", scopedDB)

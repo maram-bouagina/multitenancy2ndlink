@@ -31,7 +31,8 @@ export interface Store {
   storefront_layout_published: string;
   theme_version: number;
   tax_number?: string;
-  status?: string;
+  maintenance_message?: string;
+  status: 'active' | 'inactive' | 'suspended';
 }
 
 export type StorefrontSectionType =
@@ -79,6 +80,22 @@ export interface Product {
   category?: Category;
   collections?: Collection[];
   tags?: Tag[];
+}
+
+export type ProductRelationType = 'upsell' | 'cross_sell';
+
+export interface ProductRelation {
+  id?: string;
+  source_product_id?: string;
+  related_product_id: string;
+  relation_type: ProductRelationType;
+  position: number;
+  related_product?: Product;
+}
+
+export interface ProductRelationsResponse {
+  upsell_products?: ProductRelation[];
+  cross_sell_products?: ProductRelation[];
 }
 
 export interface Category {
@@ -181,6 +198,7 @@ export interface CreateStoreRequest {
   theme_font_family?: string;
   storefront_layout_draft?: string;
   tax_number?: string;
+  maintenance_message?: string;
 }
 
 export interface UpdateStoreRequest {
@@ -198,7 +216,12 @@ export interface UpdateStoreRequest {
   theme_font_family?: string;
   storefront_layout_draft?: string;
   tax_number?: string;
+  maintenance_message?: string;
   status?: 'active' | 'suspended' | 'inactive';
+}
+
+export interface UpdateStoreStatusRequest {
+  status: 'active' | 'inactive';
 }
 
 export interface CreateProductRequest {
@@ -222,6 +245,28 @@ export interface CreateProductRequest {
   tax_class?: string;
   category_id?: string;
   published_at?: string;
+}
+
+export interface ReplaceProductRelationsRequest {
+  relations: Array<{
+    related_product_id: string;
+    relation_type: ProductRelationType;
+    position: number;
+  }>;
+}
+
+export interface CloneProductRequest {
+  source_product_id: string;
+  title: string;
+  sku_suffix?: string;
+  include_images: boolean;
+}
+
+export interface CloneProductResponse {
+  cloned_product: Product & {
+    images?: ProductImage[];
+  };
+  message: string;
 }
 
 export interface CreateProductImageRequest {
@@ -285,4 +330,49 @@ export interface ProductFilters extends PaginationParams {
   max_price?: number;
   in_stock?: boolean;
   sort_by?: 'newest' | 'oldest' | 'price_asc' | 'price_desc';
+}
+
+// ── Admin Customer Types ────────────────────────────────────────────────────
+
+export interface AdminCustomer {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone?: string | null;
+  avatar?: string | null;
+  status: 'active' | 'pending' | 'suspended';
+  email_verified: boolean;
+  two_factor_enabled: boolean;
+  accepts_marketing: boolean;
+  created_at: string;
+}
+
+export interface AdminCustomerAddress {
+  id: string;
+  customer_id: string;
+  store_id: string;
+  label: string;
+  first_name: string;
+  last_name: string;
+  company?: string | null;
+  address1: string;
+  address2?: string | null;
+  city: string;
+  state?: string | null;
+  postal_code: string;
+  country: string;
+  phone?: string | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerGroup {
+  id: string;
+  name: string;
+  description?: string | null;
+  discount: number;
+  member_count: number;
+  created_at: string;
 }

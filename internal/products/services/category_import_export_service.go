@@ -150,91 +150,163 @@ func applyCategoryRows(
 		return strings.TrimSpace(row[i])
 	}
 
+	dataRows := rows[1:]
 	res := &ImportResult{}
-
-	for lineNo, row := range rows[1:] {
+	processed := make(map[int]bool, len(dataRows))
+	pendingRowByID := make(map[string]int, len(dataRows))
+	for rowIdx, row := range dataRows {
 		if len(row) == 0 {
 			continue
 		}
-		lineNum := lineNo + 2
-
-		name := get(row, "name")
-		if name == "" {
-			res.Errors = append(res.Errors, fmt.Sprintf("line %d: name is required", lineNum))
-			res.Skipped++
-			continue
+		if rowID := get(row, "id"); rowID != "" {
+			pendingRowByID[rowID] = rowIdx
 		}
+	}
 
-		slug := get(row, "slug")
-		if slug == "" {
-			slug = generateSlug(name)
-		}
+	for len(processed) < len(dataRows) {
+		progressed := false
 
-		vis := models.CategoryVisibility(get(row, "visibility"))
-		if vis == "" {
-			vis = models.CategoryPublic
-		}
-
-		var descPtr *string
-		if v := get(row, "description"); v != "" {
-			descPtr = &v
-		}
-
-		var parentID *uuid.UUID
-		if v := get(row, "parent_id"); v != "" {
-			if uid, err := uuid.Parse(v); err == nil {
-				parentID = &uid
+		for rowIdx, row := range dataRows {
+			if processed[rowIdx] || len(row) == 0 {
+				processed[rowIdx] = true
+				continue
 			}
-		}
 
-		if parentID == nil {
-			if parentSlug := get(row, "parent_slug"); parentSlug != "" {
+			lineNum := rowIdx + 2
+			parentSlug := get(row, "parent_slug")
+			parentIDRaw := get(row, "parent_id")
+
+			if parentSlug != "" {
 				resolvedID, found, err := resolveCategoryIDBySlug(db, storeID, parentSlug)
 				if err != nil {
 					res.Errors = append(res.Errors, fmt.Sprintf("line %d: parent lookup failed: %s", lineNum, err))
 					res.Skipped++
+					processed[rowIdx] = true
+					progressed = true
 					continue
 				}
-				if found {
-					parentID = &resolvedID
-				} else {
-					res.Warnings = append(res.Warnings, fmt.Sprintf("line %d: parent_slug '%s' not found, category imported as root", lineNum, parentSlug))
+				if !found {
+					continue
+				}
+				parentIDRaw = resolvedID.String()
+			}
+
+			if parentIDRaw != "" {
+				if _, err := uuid.Parse(parentIDRaw); err != nil {
+					res.Errors = append(res.Errors, fmt.Sprintf("line %d: invalid parent_id '%s'", lineNum, parentIDRaw))
+					res.Skipped++
+					processed[rowIdx] = true
+					progressed = true
+					continue
+				}
+
+				parentCategory, err := findCategoryByID(db, storeID, parentIDRaw)
+				if err != nil {
+					res.Errors = append(res.Errors, fmt.Sprintf("line %d: parent lookup failed: %s", lineNum, err))
+					res.Skipped++
+					processed[rowIdx] = true
+					progressed = true
+					continue
+				}
+				if parentCategory == nil {
+					if pendingParentRowIdx, ok := pendingRowByID[parentIDRaw]; ok && !processed[pendingParentRowIdx] {
+						continue
+					}
 				}
 			}
+
+			name := get(row, "name")
+			if name == "" {
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: name is required", lineNum))
+				res.Skipped++
+				processed[rowIdx] = true
+				progressed = true
+				continue
+			}
+
+			slug := get(row, "slug")
+			if slug == "" {
+				slug = generateSlug(name)
+			}
+
+			vis := models.CategoryVisibility(get(row, "visibility"))
+			if vis == "" {
+				vis = models.CategoryPublic
+			}
+
+			var descPtr *string
+			if v := get(row, "description"); v != "" {
+				descPtr = &v
+			}
+
+			var parentID *uuid.UUID
+			if parentIDRaw != "" {
+				uid, _ := uuid.Parse(parentIDRaw)
+				parentID = &uid
+			}
+
+			found, err := findCategoryBySlug(db, storeID, slug)
+			if err != nil {
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: db error: %s", lineNum, err))
+				res.Skipped++
+				processed[rowIdx] = true
+				progressed = true
+				continue
+			}
+			if found != nil {
+				found.Name = name
+				found.Description = descPtr
+				found.Visibility = vis
+				found.ParentID = parentID
+				if err := r.Update(found); err != nil {
+					res.Errors = append(res.Errors, fmt.Sprintf("line %d: update failed: %s", lineNum, err))
+					res.Skipped++
+					processed[rowIdx] = true
+					progressed = true
+					continue
+				}
+				res.Updated++
+			} else {
+				cat := &models.Category{
+					StoreID:     storeID,
+					Name:        name,
+					Slug:        slug,
+					Description: descPtr,
+					Visibility:  vis,
+					ParentID:    parentID,
+				}
+				if err := r.Create(cat); err != nil {
+					res.Errors = append(res.Errors, fmt.Sprintf("line %d: create failed: %s", lineNum, err))
+					res.Skipped++
+					processed[rowIdx] = true
+					progressed = true
+					continue
+				}
+				res.Imported++
+			}
+
+			processed[rowIdx] = true
+			progressed = true
 		}
 
-		found, err := findCategoryBySlug(db, storeID, slug)
-		if err != nil {
-			res.Errors = append(res.Errors, fmt.Sprintf("line %d: db error: %s", lineNum, err))
-			res.Skipped++
+		if progressed {
 			continue
 		}
-		if found != nil {
-			found.Name = name
-			found.Description = descPtr
-			found.Visibility = vis
-			found.ParentID = parentID
-			if err := r.Update(found); err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: update failed: %s", lineNum, err))
-				res.Skipped++
+
+		for rowIdx, row := range dataRows {
+			if processed[rowIdx] || len(row) == 0 {
 				continue
 			}
-			res.Updated++
-		} else {
-			cat := &models.Category{
-				StoreID:     storeID,
-				Name:        name,
-				Slug:        slug,
-				Description: descPtr,
-				Visibility:  vis,
-				ParentID:    parentID,
+			lineNum := rowIdx + 2
+			parentSlug := get(row, "parent_slug")
+			parentID := get(row, "parent_id")
+			if parentSlug != "" {
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: parent_slug '%s' was not found in the import file or database", lineNum, parentSlug))
+			} else {
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: parent_id '%s' was not found in the database", lineNum, parentID))
 			}
-			if err := r.Create(cat); err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: create failed: %s", lineNum, err))
-				res.Skipped++
-				continue
-			}
-			res.Imported++
+			res.Skipped++
+			processed[rowIdx] = true
 		}
 	}
 
@@ -244,6 +316,23 @@ func applyCategoryRows(
 func findCategoryBySlug(db *gorm.DB, storeID uuid.UUID, slug string) (*models.Category, error) {
 	var c models.Category
 	err := db.Where("store_id = ? AND slug = ?", storeID, slug).First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func findCategoryByID(db *gorm.DB, storeID uuid.UUID, id string) (*models.Category, error) {
+	categoryID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var c models.Category
+	err = db.Where("store_id = ? AND id = ?", storeID, categoryID).First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

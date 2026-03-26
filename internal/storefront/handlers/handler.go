@@ -44,7 +44,7 @@ func (h *Handler) StoreContextMiddleware(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 	}
-	if entry == nil || entry.Status != "active" {
+	if entry == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "store not found"})
 	}
 
@@ -61,6 +61,20 @@ func (h *Handler) StoreContextMiddleware(c *fiber.Ctx) error {
 	if store == nil {
 		closer()
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "store not found"})
+	}
+
+	// Store is temporarily deactivated for maintenance → 503 so clients can show a proper page.
+	if store.Status != "active" {
+		closer()
+		maintenanceMsg := "Cette boutique est temporairement en maintenance. Revenez bientôt."
+		if store.MaintenanceMessage != nil && *store.MaintenanceMessage != "" {
+			maintenanceMsg = *store.MaintenanceMessage
+		}
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error":   "store_maintenance",
+			"message": maintenanceMsg,
+			"store":   store.Name,
+		})
 	}
 
 	c.Locals("sfDB", db)
@@ -152,9 +166,14 @@ func (h *Handler) GetCollectionProducts(c *fiber.Ctx) error {
 		pages = int(math.Ceil(float64(total) / float64(limit)))
 	}
 
+	imageMap, err := repo.LoadPrimaryProductImages(db, products)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+
 	items := make([]sfDto.ProductPublicResponse, len(products))
 	for i := range products {
-		items[i] = repo.ToProductPublic(&products[i], nil)
+		items[i] = repo.ToProductPublic(&products[i], imageMap[products[i].ID])
 	}
 
 	return c.JSON(sfDto.CollectionPageResponse{
@@ -209,9 +228,14 @@ func (h *Handler) GetProducts(c *fiber.Ctx) error {
 		pages = int(math.Ceil(float64(total) / float64(limit)))
 	}
 
+	imageMap, err := repo.LoadPrimaryProductImages(db, products)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+
 	items := make([]sfDto.ProductPublicResponse, len(products))
 	for i := range products {
-		items[i] = repo.ToProductPublic(&products[i], nil)
+		items[i] = repo.ToProductPublic(&products[i], imageMap[products[i].ID])
 	}
 
 	return c.JSON(sfDto.PaginatedProductsResponse{
@@ -226,7 +250,7 @@ func (h *Handler) GetProduct(c *fiber.Ctx) error {
 	store := getSfStore(c)
 	productSlug := c.Params("productSlug")
 
-	product, images, related, err := h.r.GetProductBySlug(db, store.ID, productSlug)
+	product, images, related, upsell, crossSell, err := h.r.GetProductBySlug(db, store.ID, productSlug)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 	}
@@ -234,13 +258,38 @@ func (h *Handler) GetProduct(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "product not found"})
 	}
 
+	relatedImages, err := repo.LoadPrimaryProductImages(db, related)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+	upsellImages, err := repo.LoadPrimaryProductImages(db, upsell)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+	crossSellImages, err := repo.LoadPrimaryProductImages(db, crossSell)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+
 	relatedDTOs := make([]sfDto.ProductPublicResponse, len(related))
 	for i := range related {
-		relatedDTOs[i] = repo.ToProductPublic(&related[i], nil)
+		relatedDTOs[i] = repo.ToProductPublic(&related[i], relatedImages[related[i].ID])
+	}
+
+	upsellDTOs := make([]sfDto.ProductPublicResponse, len(upsell))
+	for i := range upsell {
+		upsellDTOs[i] = repo.ToProductPublic(&upsell[i], upsellImages[upsell[i].ID])
+	}
+
+	crossSellDTOs := make([]sfDto.ProductPublicResponse, len(crossSell))
+	for i := range crossSell {
+		crossSellDTOs[i] = repo.ToProductPublic(&crossSell[i], crossSellImages[crossSell[i].ID])
 	}
 
 	return c.JSON(sfDto.ProductDetailResponse{
-		Product: repo.ToProductPublic(product, images),
-		Related: relatedDTOs,
+		Product:           repo.ToProductPublic(product, images),
+		Related:           relatedDTOs,
+		UpsellProducts:    upsellDTOs,
+		CrossSellProducts: crossSellDTOs,
 	})
 }

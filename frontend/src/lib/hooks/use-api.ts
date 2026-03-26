@@ -5,11 +5,14 @@ import {
   CreateTenantRequest,
   CreateStoreRequest,
   UpdateStoreRequest,
+  UpdateStoreStatusRequest,
   CreateProductRequest,
+  CloneProductRequest,
   CreateTagRequest,
   CreateCategoryRequest,
   CreateCollectionRequest,
-  ProductFilters
+  ProductFilters,
+  ProductRelation,
 } from '@/lib/types';
 
 // Auth hooks
@@ -26,10 +29,11 @@ export function useCreateTenant() {
 }
 
 // Store hooks
-export function useStores() {
+export function useStores(enabled = true) {
   return useQuery({
     queryKey: ['stores'],
     queryFn: () => apiClient.getStores(),
+    enabled,
   });
 }
 
@@ -58,6 +62,30 @@ export function useUpdateStore() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdateStoreRequest }) =>
       apiClient.updateStore(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stores'] });
+    },
+  });
+}
+
+export function useUploadStoreLogo() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, file }: { storeId: string; file: File }) =>
+      apiClient.uploadStoreLogo(storeId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stores'] });
+    },
+  });
+}
+
+export function useUpdateStoreStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateStoreStatusRequest }) =>
+      apiClient.updateStoreStatus(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stores'] });
     },
@@ -133,12 +161,58 @@ export function useUpdateProduct() {
   });
 }
 
+export function useProductRelations(storeId: string, productId: string) {
+  return useQuery({
+    queryKey: ['product-relations', storeId, productId],
+    queryFn: () => apiClient.getProductRelations(storeId, productId),
+    enabled: !!storeId && !!productId,
+  });
+}
+
+export function useReplaceProductRelations() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, productId, relations }: { storeId: string; productId: string; relations: ProductRelation[] }) =>
+      apiClient.replaceProductRelations(storeId, productId, {
+        relations: relations.map((relation, index) => ({
+          related_product_id: relation.related_product_id,
+          relation_type: relation.relation_type,
+          position: index,
+        })),
+      }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['product-relations', variables.storeId, variables.productId] });
+      queryClient.invalidateQueries({ queryKey: ['products', variables.storeId, variables.productId] });
+    },
+  });
+}
+
 export function useDeleteProduct() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ storeId, productId }: { storeId: string; productId: string }) =>
       apiClient.deleteProduct(storeId, productId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+}
+
+export function useCloneProduct() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      storeId,
+      productId,
+      data,
+    }: {
+      storeId: string;
+      productId: string;
+      data: CloneProductRequest;
+    }) => apiClient.cloneProduct(storeId, productId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
     },
@@ -407,5 +481,255 @@ export function useReorderProductImages() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['product-images', variables.storeId, variables.productId] });
     },
+  });
+}
+
+// ── Admin Customer hooks ─────────────────────────────────────────────────────
+
+export function useCustomers(storeId: string, params?: { page?: number; limit?: number; search?: string; status?: string }) {
+  return useQuery({
+    queryKey: ['customers', storeId, params],
+    queryFn: () => apiClient.getCustomers(storeId, params),
+    enabled: !!storeId,
+  });
+}
+
+export function useCustomer(storeId: string, customerId: string) {
+  return useQuery({
+    queryKey: ['customers', storeId, customerId],
+    queryFn: () => apiClient.getCustomer(storeId, customerId),
+    enabled: !!storeId && !!customerId,
+  });
+}
+
+export function useUpdateCustomer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, customerId, data }: { storeId: string; customerId: string; data: { status?: string; first_name?: string; last_name?: string; phone?: string } }) =>
+      apiClient.updateCustomer(storeId, customerId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customers', variables.storeId] });
+    },
+  });
+}
+
+export function useDeleteCustomer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, customerId }: { storeId: string; customerId: string }) =>
+      apiClient.deleteCustomer(storeId, customerId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customers', variables.storeId] });
+    },
+  });
+}
+
+// ── Customer Group hooks ─────────────────────────────────────────────────────
+
+export function useCustomerGroups(storeId: string) {
+  return useQuery({
+    queryKey: ['customer-groups', storeId],
+    queryFn: () => apiClient.getCustomerGroups(storeId),
+    enabled: !!storeId,
+  });
+}
+
+export function useCustomerGroup(storeId: string, groupId: string) {
+  return useQuery({
+    queryKey: ['customer-groups', storeId, groupId],
+    queryFn: () => apiClient.getCustomerGroup(storeId, groupId),
+    enabled: !!storeId && !!groupId,
+  });
+}
+
+export function useCreateCustomerGroup() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, data }: { storeId: string; data: { name: string; description?: string; discount: number } }) =>
+      apiClient.createCustomerGroup(storeId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customer-groups', variables.storeId] });
+    },
+  });
+}
+
+export function useUpdateCustomerGroup() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, groupId, data }: { storeId: string; groupId: string; data: { name: string; description?: string; discount: number } }) =>
+      apiClient.updateCustomerGroup(storeId, groupId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customer-groups', variables.storeId] });
+    },
+  });
+}
+
+export function useDeleteCustomerGroup() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, groupId }: { storeId: string; groupId: string }) =>
+      apiClient.deleteCustomerGroup(storeId, groupId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customer-groups', variables.storeId] });
+    },
+  });
+}
+
+export function useAddCustomerGroupMembers() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, groupId, customerIds }: { storeId: string; groupId: string; customerIds: string[] }) =>
+      apiClient.addCustomerGroupMembers(storeId, groupId, customerIds),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customer-groups', variables.storeId, variables.groupId] });
+    },
+  });
+}
+
+export function useRemoveCustomerGroupMembers() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ storeId, groupId, customerIds }: { storeId: string; groupId: string; customerIds: string[] }) =>
+      apiClient.removeCustomerGroupMembers(storeId, groupId, customerIds),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customer-groups', variables.storeId, variables.groupId] });
+    },
+  });
+}
+
+// ── Catalog Import/Export Hooks ──────────────────────────────────────────────
+
+export function useExportProducts() {
+  return useMutation({
+    mutationFn: ({ storeId, format }: { storeId: string; format: 'csv' | 'xlsx' }) =>
+      apiClient.exportProducts(storeId, format),
+  });
+}
+
+export function useImportProducts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId, file }: { storeId: string; file: File }) =>
+      apiClient.importProducts(storeId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+}
+
+export function useDownloadProductTemplate() {
+  return useMutation({
+    mutationFn: ({ storeId, format }: { storeId: string; format: 'csv' | 'xlsx' }) =>
+      apiClient.downloadProductImportTemplate(storeId, format),
+  });
+}
+
+export function useExportCategories() {
+  return useMutation({
+    mutationFn: ({ storeId, format }: { storeId: string; format: 'csv' | 'xlsx' }) =>
+      apiClient.exportCategories(storeId, format),
+  });
+}
+
+export function useImportCategories() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId, file }: { storeId: string; file: File }) =>
+      apiClient.importCategories(storeId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+    },
+  });
+}
+
+export function useDownloadCategoryTemplate() {
+  return useMutation({
+    mutationFn: ({ storeId, format }: { storeId: string; format: 'csv' | 'xlsx' }) =>
+      apiClient.downloadCategoryImportTemplate(storeId, format),
+  });
+}
+
+export function useExportTags() {
+  return useMutation({
+    mutationFn: ({ storeId, format }: { storeId: string; format: 'csv' | 'xlsx' }) =>
+      apiClient.exportTags(storeId, format),
+  });
+}
+
+export function useImportTags() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId, file }: { storeId: string; file: File }) =>
+      apiClient.importTags(storeId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tags'] });
+    },
+  });
+}
+
+export function useDownloadTagTemplate() {
+  return useMutation({
+    mutationFn: ({ storeId, format }: { storeId: string; format: 'csv' | 'xlsx' }) =>
+      apiClient.downloadTagImportTemplate(storeId, format),
+  });
+}
+
+export function useExportCollections() {
+  return useMutation({
+    mutationFn: ({ storeId, format }: { storeId: string; format: 'csv' | 'xlsx' }) =>
+      apiClient.exportCollections(storeId, format),
+  });
+}
+
+export function useImportCollections() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId, file }: { storeId: string; file: File }) =>
+      apiClient.importCollections(storeId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['collections'] });
+    },
+  });
+}
+
+export function useDownloadCollectionTemplate() {
+  return useMutation({
+    mutationFn: ({ storeId, format }: { storeId: string; format: 'csv' | 'xlsx' }) =>
+      apiClient.downloadCollectionImportTemplate(storeId, format),
+  });
+}
+
+export function useExportFullCatalog() {
+  return useMutation({
+    mutationFn: ({ storeId }: { storeId: string }) =>
+      apiClient.exportFullCatalog(storeId),
+  });
+}
+
+export function usePurgeCatalog() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId }: { storeId: string }) =>
+      apiClient.purgeCatalog(storeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      queryClient.invalidateQueries({ queryKey: ['tags'] });
+      queryClient.invalidateQueries({ queryKey: ['collections'] });
+    },
+  });
+}
+
+export function useFindDuplicates() {
+  return useMutation({
+    mutationFn: ({ storeId }: { storeId: string }) =>
+      apiClient.findDuplicates(storeId),
   });
 }

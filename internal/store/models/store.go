@@ -8,7 +8,7 @@ import (
 
 type Store struct {
 	ID                        uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	TenantID                  uuid.UUID  `gorm:"type:uuid;not null;index"                       json:"tenant_id"`
+	TenantID                  string     `gorm:"type:varchar(64);not null;index"                   json:"tenant_id"`
 	Name                      string     `gorm:"type:varchar(255);not null"                     json:"name"`
 	Slug                      string     `gorm:"type:varchar(255);uniqueIndex;not null"          json:"slug"`
 	Email                     *string    `gorm:"type:varchar(255)"                              json:"email"`
@@ -26,6 +26,7 @@ type Store struct {
 	StorefrontLayoutPublished string     `gorm:"type:text;not null;default:'[]'" json:"storefront_layout_published"`
 	ThemeVersion              int        `gorm:"not null;default:1" json:"theme_version"`
 	TaxNumber                 *string    `gorm:"type:varchar(100)"                              json:"tax_number"`
+	MaintenanceMessage        *string    `gorm:"type:text"                                      json:"maintenance_message"`
 	Status                    string     `gorm:"type:varchar(20);default:'active';check:status IN ('active','suspended','inactive')" json:"status"`
 	CreatedAt                 time.Time  `gorm:"type:timestamptz;autoCreateTime"                json:"created_at"`
 	UpdatedAt                 time.Time  `gorm:"type:timestamptz;autoUpdateTime"                json:"updated_at"`

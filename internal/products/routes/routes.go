@@ -21,6 +21,9 @@ func RegisterProductRoutes(app *fiber.App, db *gorm.DB) {
 	if err != nil {
 		log.Fatalf("media storage initialization failed: %v", err)
 	}
+	maxImageSizeMB := resolveMaxImageUploadSizeMB()
+	imageValidationSvc := services.NewImageValidationService()
+	imageUploadSvc := services.NewProductImageUploadService(imageValidationSvc, storage, maxImageSizeMB)
 
 	mediaHandler := handlers.NewMediaHandler(storage)
 	app.Get("/media/*", mediaHandler.Serve)
@@ -30,20 +33,30 @@ func RegisterProductRoutes(app *fiber.App, db *gorm.DB) {
 		middleware.TenantDB(),
 	)
 	registerSearch(store, db)
-	registerProducts(store, db)
-	registerImages(store, db, storage)
+	registerProducts(store, db, imageUploadSvc, maxImageSizeMB)
+	registerImages(store, db, storage, imageUploadSvc)
 	registerCategories(store, db)
 	registerCollections(store, db)
 	registerTags(store, db)
+	registerCatalog(store, db)
 }
 
-func registerProducts(store fiber.Router, db *gorm.DB) {
+func registerCatalog(store fiber.Router, db *gorm.DB) {
+	importExportHandler := handlers.NewImportExportHandler(repo.NewProductRepository(), nil, 0)
+
+	g := store.Group("/catalog")
+	g.Get("/export", importExportHandler.ExportFullCatalog)
+	g.Delete("/purge", importExportHandler.PurgeCatalog)
+	g.Get("/duplicates", importExportHandler.FindDuplicates)
+}
+
+func registerProducts(store fiber.Router, db *gorm.DB, imageUploadSvc services.ProductImageUploadService, maxImageSizeMB int64) {
 	productHandler := handlers.NewProductHandler(
 		services.NewProductService(repo.NewProductRepository()),
 		services.NewPricingService(),
 		services.NewPublicationValidationService(),
 	)
-	importExportHandler := handlers.NewImportExportHandler(repo.NewProductRepository())
+	importExportHandler := handlers.NewImportExportHandler(repo.NewProductRepository(), imageUploadSvc, maxImageSizeMB)
 
 	g := store.Group("/products")
 
@@ -56,7 +69,10 @@ func registerProducts(store fiber.Router, db *gorm.DB) {
 	g.Post("/", productHandler.Create)
 	g.Get("/", productHandler.GetAll)
 	g.Get("/:id", productHandler.GetByID)
+	relationHandler := handlers.NewProductRelationHandler()
+	g.Get("/:id/relations", relationHandler.GetByProduct)
 	g.Put("/:id", productHandler.Update)
+	g.Put("/:id/relations", relationHandler.ReplaceForProduct)
 	g.Delete("/:id", productHandler.Delete)
 	g.Post("/:id/clone", productHandler.Clone)
 	g.Post("/:id/stock/adjust", productHandler.AdjustStock)
@@ -65,7 +81,7 @@ func registerProducts(store fiber.Router, db *gorm.DB) {
 
 func registerCategories(store fiber.Router, db *gorm.DB) {
 	h := handlers.NewCategoryHandler()
-	importExportHandler := handlers.NewImportExportHandler(repo.NewProductRepository())
+	importExportHandler := handlers.NewImportExportHandler(repo.NewProductRepository(), nil, 0)
 
 	g := store.Group("/categories")
 
@@ -84,8 +100,16 @@ func registerCategories(store fiber.Router, db *gorm.DB) {
 
 func registerCollections(store fiber.Router, db *gorm.DB) {
 	collectionHandler := handlers.NewCollectionHandler()
+	importExportHandler := handlers.NewImportExportHandler(repo.NewProductRepository(), nil, 0)
 
 	g := store.Group("/collections")
+
+	// Import/Export (static routes first)
+	g.Get("/export", importExportHandler.ExportCollections)
+	g.Post("/import", importExportHandler.ImportCollections)
+	g.Get("/import/template", importExportHandler.CollectionImportTemplate)
+
+	// CRUD
 	g.Post("/", collectionHandler.Create)
 	g.Get("/", collectionHandler.GetAll)
 	g.Get("/:id", collectionHandler.GetByID)
@@ -96,21 +120,8 @@ func registerCollections(store fiber.Router, db *gorm.DB) {
 	g.Delete("/:id/products/:productId", collectionHandler.RemoveProduct)
 }
 
-func registerImages(store fiber.Router, db *gorm.DB, storage media.Storage) {
-	maxFileSizeMB := int64(10)
-	if raw := strings.TrimSpace(os.Getenv("MAX_IMAGE_UPLOAD_MB")); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			maxFileSizeMB = parsed
-		}
-	}
-
-	imageHandler := handlers.NewImageHandler(
-		services.NewImageValidationService(),
-		services.NewPricingService(),
-		services.NewPublicationValidationService(),
-		storage,
-		maxFileSizeMB,
-	)
+func registerImages(store fiber.Router, db *gorm.DB, storage media.Storage, imageUploadSvc services.ProductImageUploadService) {
+	imageHandler := handlers.NewImageHandler(imageUploadSvc, storage)
 
 	g := store.Group("/products/:productId/images")
 	g.Post("/", imageHandler.Create)
@@ -120,10 +131,28 @@ func registerImages(store fiber.Router, db *gorm.DB, storage media.Storage) {
 	g.Post("/reorder", imageHandler.Reorder)
 }
 
+func resolveMaxImageUploadSizeMB() int64 {
+	maxFileSizeMB := int64(10)
+	if raw := strings.TrimSpace(os.Getenv("MAX_IMAGE_UPLOAD_MB")); raw != "" {
+		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
+			maxFileSizeMB = parsed
+		}
+	}
+	return maxFileSizeMB
+}
+
 func registerTags(store fiber.Router, db *gorm.DB) {
 	h := handlers.NewTagHandler()
+	importExportHandler := handlers.NewImportExportHandler(repo.NewProductRepository(), nil, 0)
 
 	g := store.Group("/tags")
+
+	// Import/Export (static routes first)
+	g.Get("/export", importExportHandler.ExportTags)
+	g.Post("/import", importExportHandler.ImportTags)
+	g.Get("/import/template", importExportHandler.TagImportTemplate)
+
+	// CRUD
 	g.Post("/", h.Create)
 	g.Get("/", h.GetAll)
 	g.Get("/:id", h.GetByID)

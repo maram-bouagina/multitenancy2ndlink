@@ -3,51 +3,87 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { getApiErrorMessage } from '@/lib/api/errors';
-import { useCreateTenant } from '@/lib/hooks/use-api';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Chrome, Facebook, Check, X } from 'lucide-react';
+import { authClient } from '@/lib/auth-client';
 
-const registerSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  first_name: z.string().min(1, 'First name is required'),
-  last_name: z.string().min(1, 'Last name is required'),
-  phone: z.string().optional(),
-  plan: z.enum(['free', 'pro', 'enterprise']),
-});
+const GOOGLE_ENABLED = !!process.env.NEXT_PUBLIC_GOOGLE_ENABLED;
+const FACEBOOK_ENABLED = !!process.env.NEXT_PUBLIC_FACEBOOK_ENABLED;
 
-type RegisterForm = z.infer<typeof registerSchema>;
+const PASSWORD_RULES = [
+  { label: 'At least 8 characters', test: (p: string) => p.length >= 8 },
+  { label: 'Contains uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
+  { label: 'Contains lowercase letter', test: (p: string) => /[a-z]/.test(p) },
+  { label: 'Contains a number', test: (p: string) => /\d/.test(p) },
+];
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [error, setError] = useState<string>('');
-  const createTenantMutation = useCreateTenant();
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    formState: { errors },
-  } = useForm<RegisterForm>({
-    resolver: zodResolver(registerSchema),
-  });
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [plan, setPlan] = useState<string>('free');
 
-  const onSubmit = async (data: RegisterForm) => {
+  const allPasswordRulesMet = PASSWORD_RULES.every((r) => r.test(password));
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!firstName || !lastName || !email || !password || !plan) return;
+    if (!allPasswordRulesMet) {
+      setError('Password does not meet complexity requirements.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError('');
+
+      const { error: authError } = await authClient.signUp.email({
+        email,
+        password,
+        name: `${firstName} ${lastName}`,
+        firstName,
+        lastName,
+        phone: phone || "",
+        plan,
+        role: 'merchant',
+        userStatus: 'active',
+        storeId: '',
+        storeSlug: '',
+      });
+
+      if (authError) {
+        setError(authError.message || 'Registration failed');
+        return;
+      }
+
+      router.push(`/auth/verify-email?email=${encodeURIComponent(email)}`);
+    } catch {
+      setError('Registration failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSocialSignup = async (provider: 'google' | 'facebook') => {
     try {
       setError('');
-      await createTenantMutation.mutateAsync(data);
-      router.push('/auth/login?message=Registration successful. Please log in.');
-    } catch (error: unknown) {
-      setError(getApiErrorMessage(error, 'Registration failed'));
+      await authClient.signIn.social({
+        provider,
+        callbackURL: '/dashboard',
+      });
+    } catch {
+      setError(`Failed to sign up with ${provider}`);
     }
   };
 
@@ -57,11 +93,35 @@ export default function RegisterPage() {
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">Create account</CardTitle>
           <CardDescription className="text-center">
-            Enter your information to create your account
+            Enter your information to create your merchant account
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {/* Social Signup — only shown when OAuth is configured */}
+          {(GOOGLE_ENABLED || FACEBOOK_ENABLED) && (
+            <>
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                {GOOGLE_ENABLED && (
+                  <Button variant="outline" onClick={() => handleSocialSignup('google')} type="button" className="w-full">
+                    <Chrome className="mr-2 h-4 w-4" /> Google
+                  </Button>
+                )}
+                {FACEBOOK_ENABLED && (
+                  <Button variant="outline" onClick={() => handleSocialSignup('facebook')} type="button" className="w-full">
+                    <Facebook className="mr-2 h-4 w-4" /> Facebook
+                  </Button>
+                )}
+              </div>
+              <div className="relative mb-6">
+                <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white px-2 text-muted-foreground">Or continue with email</span>
+                </div>
+              </div>
+            </>
+          )}
+
+          <form onSubmit={handleRegister} className="space-y-4">
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
@@ -71,71 +131,45 @@ export default function RegisterPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="first_name">First Name</Label>
-                <Input
-                  id="first_name"
-                  placeholder="John"
-                  {...register('first_name')}
-                />
-                {errors.first_name && (
-                  <p className="text-sm text-red-600">{errors.first_name.message}</p>
-                )}
+                <Input id="first_name" placeholder="John" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="last_name">Last Name</Label>
-                <Input
-                  id="last_name"
-                  placeholder="Doe"
-                  {...register('last_name')}
-                />
-                {errors.last_name && (
-                  <p className="text-sm text-red-600">{errors.last_name.message}</p>
-                )}
+                <Input id="last_name" placeholder="Doe" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
               </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="john@example.com"
-                {...register('email')}
-              />
-              {errors.email && (
-                <p className="text-sm text-red-600">{errors.email.message}</p>
-              )}
+              <Input id="email" type="email" placeholder="john@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="phone">Phone (optional)</Label>
-              <Input
-                id="phone"
-                type="tel"
-                placeholder="+1234567890"
-                {...register('phone')}
-              />
-              {errors.phone && (
-                <p className="text-sm text-red-600">{errors.phone.message}</p>
-              )}
+              <Input id="phone" type="tel" placeholder="+1234567890" value={phone} onChange={(e) => setPhone(e.target.value)} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                {...register('password')}
-              />
-              {errors.password && (
-                <p className="text-sm text-red-600">{errors.password.message}</p>
+              <Input id="password" type="password" placeholder="Create a password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              {password && (
+                <div className="space-y-1 mt-2">
+                  {PASSWORD_RULES.map((rule) => {
+                    const met = rule.test(password);
+                    return (
+                      <div key={rule.label} className="flex items-center gap-2 text-xs">
+                        {met ? <Check className="h-3 w-3 text-green-600" /> : <X className="h-3 w-3 text-gray-400" />}
+                        <span className={met ? 'text-green-600' : 'text-gray-500'}>{rule.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="plan">Plan</Label>
-              <Select onValueChange={(value) => setValue('plan', value as RegisterForm['plan'])}>
+              <Select value={plan} onValueChange={setPlan}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a plan" />
                 </SelectTrigger>
@@ -145,17 +179,10 @@ export default function RegisterPage() {
                   <SelectItem value="enterprise">Enterprise</SelectItem>
                 </SelectContent>
               </Select>
-              {errors.plan && (
-                <p className="text-sm text-red-600">{errors.plan.message}</p>
-              )}
             </div>
 
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={createTenantMutation.isPending}
-            >
-              {createTenantMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create account
             </Button>
           </form>

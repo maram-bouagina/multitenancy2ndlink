@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -8,25 +9,32 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ProductRelationEditor } from '@/components/dashboard/product-relation-editor';
+import { ProductTagPicker } from '@/components/dashboard/product-tag-picker';
 import { getApiErrorMessage } from '@/lib/api/errors';
 import { resolveMediaUrl } from '@/lib/api/media-url';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/hooks/use-auth';
+import { useLanguage } from '@/lib/hooks/use-language';
 import {
   useAssignProductTags,
   useCategories,
   useCreateProductImage,
   useDeleteProductImage,
   useProduct,
+  useProductRelations,
   useProductImages,
+  useReplaceProductRelations,
   useReorderProductImages,
   useTags,
   useUpdateProduct,
   useUpdateProductImage,
 } from '@/lib/hooks/use-api';
+import { ProductRelation } from '@/lib/types';
 
 const productSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -59,19 +67,31 @@ function optionalNumber(value?: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function normalizeCurrency(value?: string, fallback = 'USD') {
+  const normalized = value?.trim().toUpperCase();
+  return normalized && normalized.length === 3 ? normalized : fallback;
+}
+
+function normalizeVisibility(value?: string): 'public' | 'private' {
+  return value === 'private' ? 'private' : 'public';
+}
+
 export default function EditProductPage() {
   const router = useRouter();
   const params = useParams();
   const productId = Array.isArray(params?.id) ? params.id[0] : (params?.id || '');
   const { currentStore } = useAuth();
+  const { t } = useLanguage();
   const storeId = currentStore?.id || '';
 
   const { data: product, isLoading, isError } = useProduct(storeId, productId);
   const updateProductMutation = useUpdateProduct();
   const { data: categories } = useCategories(storeId);
   const { data: tags } = useTags(storeId);
+  const { data: productRelations } = useProductRelations(storeId, productId);
   const { data: productImages } = useProductImages(storeId, productId);
   const assignTagsMutation = useAssignProductTags();
+  const replaceRelationsMutation = useReplaceProductRelations();
   const createImageMutation = useCreateProductImage();
   const updateImageMutation = useUpdateProductImage();
   const deleteImageMutation = useDeleteProductImage();
@@ -80,6 +100,7 @@ export default function EditProductPage() {
   const [selectedTagIdsOverride, setSelectedTagIdsOverride] = useState<string[] | null>(null);
   const [imageError, setImageError] = useState<string>('');
   const [imageDrafts, setImageDrafts] = useState<Record<string, { alt_text: string; caption: string }>>({});
+  const [relationDraftsOverride, setRelationDraftsOverride] = useState<ProductRelation[] | null>(null);
 
   const { register, handleSubmit, reset, control, formState: { errors } } = useForm<ProductForm>({
     resolver: zodResolver(productSchema),
@@ -87,6 +108,7 @@ export default function EditProductPage() {
 
   useEffect(() => {
     if (product) {
+      const fallbackCurrency = normalizeCurrency(product.currency, currentStore?.currency || 'USD');
       reset({
         title: product.title,
         slug: product.slug || '',
@@ -94,10 +116,10 @@ export default function EditProductPage() {
         price: product.price,
         sale_price: product.sale_price || undefined,
         status: product.status,
-        visibility: product.visibility,
+        visibility: normalizeVisibility(product.visibility),
         track_stock: product.track_stock ?? false,
         stock: product.stock ?? 0,
-        currency: product.currency,
+        currency: fallbackCurrency,
         sku: product.sku || '',
         weight: product.weight || undefined,
         dimensions: product.dimensions || '',
@@ -106,20 +128,22 @@ export default function EditProductPage() {
         category_id: product.category_id || '',
       });
     }
-  }, [product, reset]);
+  }, [currentStore?.currency, product, reset]);
 
   const initialTagIds = product?.tags?.map((tag) => tag.id) ?? [];
   const selectedTagIds = selectedTagIdsOverride ?? initialTagIds;
-
-  const toggleTag = (tagId: string) => {
-    setSelectedTagIdsOverride((current) => {
-      const base = current ?? initialTagIds;
-
-      return base.includes(tagId)
-        ? base.filter((id) => id !== tagId)
-        : [...base, tagId];
-    });
-  };
+  const initialRelations = [
+    ...(productRelations?.upsell_products ?? []),
+    ...(productRelations?.cross_sell_products ?? []),
+  ].map((relation) => ({
+    id: relation.id,
+    source_product_id: relation.source_product_id,
+    related_product_id: relation.related_product_id,
+    relation_type: relation.relation_type,
+    position: relation.position,
+    related_product: relation.related_product,
+  }));
+  const relationDrafts = relationDraftsOverride ?? initialRelations;
 
   const handleUploadImages = async (files: FileList | null) => {
     if (!files || !storeId) {
@@ -136,7 +160,7 @@ export default function EditProductPage() {
         });
       }
     } catch (uploadError: unknown) {
-      setImageError(getApiErrorMessage(uploadError, 'Failed to upload one or more images'));
+      setImageError(getApiErrorMessage(uploadError, t.productForm.uploadFailed));
     }
   };
 
@@ -171,7 +195,7 @@ export default function EditProductPage() {
         },
       });
     } catch (updateError: unknown) {
-      setImageError(getApiErrorMessage(updateError, 'Failed to update image metadata'));
+      setImageError(getApiErrorMessage(updateError, t.productForm.imageMetaFailed));
     }
   };
 
@@ -204,7 +228,7 @@ export default function EditProductPage() {
         imageIds: orderedIds,
       });
     } catch (reorderError: unknown) {
-      setImageError(getApiErrorMessage(reorderError, 'Failed to reorder images'));
+      setImageError(getApiErrorMessage(reorderError, t.productForm.reorderFailed));
     }
   };
 
@@ -213,7 +237,7 @@ export default function EditProductPage() {
       return;
     }
 
-    if (!confirm('Delete this image?')) {
+    if (!confirm(t.productForm.deleteImageConfirm)) {
       return;
     }
 
@@ -225,20 +249,32 @@ export default function EditProductPage() {
         imageId,
       });
     } catch (deleteError: unknown) {
-      setImageError(getApiErrorMessage(deleteError, 'Failed to delete image'));
+      setImageError(getApiErrorMessage(deleteError, t.productForm.deleteImageFailed));
     }
   };
 
   const onSubmit = async (data: ProductForm) => {
     if (!storeId) {
-      setError('Select a store before updating a product.');
+      setError(t.productForm.selectStoreUpdate);
       return;
     }
 
+    if (!product) {
+      setError(t.productForm.productNotFoundError);
+      return;
+    }
+
+    const currentProduct = product;
+
     try {
       setError('');
+      const normalizedVisibility = normalizeVisibility(data.visibility || currentProduct.visibility);
+      const normalizedCurrency = normalizeCurrency(data.currency, currentStore?.currency || currentProduct.currency || 'USD');
+
       const payload = {
         ...data,
+        visibility: normalizedVisibility,
+        currency: normalizedCurrency,
         slug: optionalString(data.slug),
         description: optionalString(data.description),
         sku: optionalString(data.sku),
@@ -252,29 +288,28 @@ export default function EditProductPage() {
 
       await updateProductMutation.mutateAsync({ storeId, productId, data: payload });
       await assignTagsMutation.mutateAsync({ storeId, productId, tagIds: selectedTagIds });
+      await replaceRelationsMutation.mutateAsync({ storeId, productId, relations: relationDrafts });
 
       router.push('/dashboard/products');
     } catch (error: unknown) {
-      setError(getApiErrorMessage(error, 'Failed to update product'));
+      setError(getApiErrorMessage(error, t.productForm.updateFailed));
     }
   };
 
   if (isLoading) {
-    return <div className="p-6">Loading...</div>;
+    return <div className="p-6">{t.productForm.loading}</div>;
   }
 
   if (isError || !product) {
-    return <div className="p-6 text-red-600">Product not found</div>;
+    return <div className="p-6 text-red-600">{t.productForm.notFound}</div>;
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-3xl">
         <CardHeader>
-          <CardTitle>Edit Product</CardTitle>
-          <CardDescription>
-            Update product details.
-          </CardDescription>
+          <CardTitle>{t.productForm.editTitle}</CardTitle>
+          <CardDescription>{t.productForm.editDesc}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -286,61 +321,61 @@ export default function EditProductPage() {
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="title">Product Title *</Label>
-                <Input id="title" placeholder="Cool T-Shirt" {...register('title')} />
+                <Label htmlFor="title">{t.productForm.title}</Label>
+                <Input id="title" placeholder={t.productForm.titlePlaceholder} {...register('title')} />
                 {errors.title && <p className="text-sm text-red-600">{errors.title.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="slug">Slug</Label>
-                <Input id="slug" placeholder="cool-t-shirt" {...register('slug')} />
+                <Label htmlFor="slug">{t.productForm.slug}</Label>
+                <Input id="slug" placeholder={t.productForm.slugPlaceholder} {...register('slug')} />
                 {errors.slug && <p className="text-sm text-red-600">{errors.slug.message}</p>}
               </div>
 
               <div className="space-y-2 lg:col-span-2">
-                <Label htmlFor="description">Description</Label>
-                <Input id="description" placeholder="Short product description" {...register('description')} />
+                <Label htmlFor="description">{t.productForm.description}</Label>
+                <Textarea id="description" placeholder={t.productForm.shortDescriptionPlaceholder} rows={4} {...register('description')} />
                 {errors.description && <p className="text-sm text-red-600">{errors.description.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="price">Price *</Label>
+                <Label htmlFor="price">{t.productForm.price}</Label>
                 <Input id="price" type="number" step="0.01" placeholder="0.00" {...register('price', { valueAsNumber: true })} />
                 {errors.price && <p className="text-sm text-red-600">{errors.price.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="sale_price">Sale Price</Label>
+                <Label htmlFor="sale_price">{t.productForm.salePrice}</Label>
                 <Input id="sale_price" type="number" step="0.01" placeholder="0.00" {...register('sale_price', { valueAsNumber: true })} />
                 {errors.sale_price && <p className="text-sm text-red-600">{errors.sale_price.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="currency">Currency *</Label>
+                <Label htmlFor="currency">{t.productForm.currency}</Label>
                 <Input id="currency" placeholder="USD" {...register('currency')} />
                 {errors.currency && <p className="text-sm text-red-600">{errors.currency.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="stock">Stock *</Label>
+                <Label htmlFor="stock">{t.productForm.stock}</Label>
                 <Input id="stock" type="number" placeholder="0" {...register('stock', { valueAsNumber: true })} />
                 {errors.stock && <p className="text-sm text-red-600">{errors.stock.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="status">Status *</Label>
+                <Label htmlFor="status">{t.productForm.status}</Label>
                 <Controller
                   name="status"
                   control={control}
                   render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger id="status">
-                        <SelectValue placeholder="Select status" />
+                        <SelectValue placeholder={t.productForm.selectStatus} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="draft">Draft</SelectItem>
-                        <SelectItem value="published">Published</SelectItem>
-                        <SelectItem value="archived">Archived</SelectItem>
+                        <SelectItem value="draft">{t.productForm.statusDraft}</SelectItem>
+                        <SelectItem value="published">{t.productForm.statusPublished}</SelectItem>
+                        <SelectItem value="archived">{t.productForm.statusArchived}</SelectItem>
                       </SelectContent>
                     </Select>
                   )}
@@ -349,18 +384,18 @@ export default function EditProductPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="visibility">Visibility *</Label>
+                <Label htmlFor="visibility">{t.productForm.visibility}</Label>
                 <Controller
                   name="visibility"
                   control={control}
                   render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger id="visibility">
-                        <SelectValue placeholder="Select visibility" />
+                        <SelectValue placeholder={t.productForm.selectVisibility} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="public">Public</SelectItem>
-                        <SelectItem value="private">Private</SelectItem>
+                        <SelectItem value="public">{t.productForm.visibilityPublic}</SelectItem>
+                        <SelectItem value="private">{t.productForm.visibilityPrivate}</SelectItem>
                       </SelectContent>
                     </Select>
                   )}
@@ -371,12 +406,12 @@ export default function EditProductPage() {
               <div className="space-y-2">
                 <Label htmlFor="track_stock">
                   <input type="checkbox" {...register('track_stock')} className="h-4 w-4 mr-2" />
-                  Track Stock
+                  {t.productForm.trackStock}
                 </Label>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="category_id">Category</Label>
+                <Label htmlFor="category_id">{t.productForm.category}</Label>
                 <Controller
                   name="category_id"
                   control={control}
@@ -386,10 +421,10 @@ export default function EditProductPage() {
                       onValueChange={(value) => field.onChange(value === NO_CATEGORY_VALUE ? '' : value)}
                     >
                       <SelectTrigger id="category_id">
-                        <SelectValue placeholder="Select a category" />
+                        <SelectValue placeholder={t.productForm.selectCategory} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={NO_CATEGORY_VALUE}>None</SelectItem>
+                        <SelectItem value={NO_CATEGORY_VALUE}>{t.productForm.none}</SelectItem>
                         {categories?.map((category) => (
                           <SelectItem key={category.id} value={category.id}>
                             {category.name}
@@ -403,68 +438,85 @@ export default function EditProductPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="sku">SKU</Label>
-                <Input id="sku" placeholder="SKU-001" {...register('sku')} />
+                <Label htmlFor="sku">{t.productForm.sku}</Label>
+                <Input id="sku" placeholder={t.productForm.skuPlaceholder} {...register('sku')} />
                 {errors.sku && <p className="text-sm text-red-600">{errors.sku.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="weight">Weight</Label>
-                <Input id="weight" type="number" step="0.01" placeholder="0.00" {...register('weight', { valueAsNumber: true })} />
+                <Label htmlFor="weight">{t.productForm.weight}</Label>
+                <Input id="weight" type="number" step="0.01" placeholder={t.productForm.weightPlaceholderEdit} {...register('weight', { valueAsNumber: true })} />
                 {errors.weight && <p className="text-sm text-red-600">{errors.weight.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="dimensions">Dimensions</Label>
-                <Input id="dimensions" placeholder="e.g., 10x10x10" {...register('dimensions')} />
+                <Label htmlFor="dimensions">{t.productForm.dimensions}</Label>
+                <Input id="dimensions" placeholder={t.productForm.dimensionsPlaceholderEdit} {...register('dimensions')} />
                 {errors.dimensions && <p className="text-sm text-red-600">{errors.dimensions.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="brand">Brand</Label>
-                <Input id="brand" placeholder="Brand name" {...register('brand')} />
+                <Label htmlFor="brand">{t.productForm.brand}</Label>
+                <Input id="brand" placeholder={t.productForm.brandPlaceholder} {...register('brand')} />
                 {errors.brand && <p className="text-sm text-red-600">{errors.brand.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="tax_class">Tax Class</Label>
-                <Input id="tax_class" placeholder="Standard" {...register('tax_class')} />
+                <Label htmlFor="tax_class">{t.productForm.taxClass}</Label>
+                <Input id="tax_class" placeholder={t.productForm.taxClassPlaceholderEdit} {...register('tax_class')} />
                 {errors.tax_class && <p className="text-sm text-red-600">{errors.tax_class.message}</p>}
               </div>
             </div>
 
-            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Tags</h2>
-                <p className="text-sm text-gray-600">Assign tags to improve filtering and merchandising.</p>
-              </div>
-              {!tags || tags.length === 0 ? (
-                <p className="text-sm text-gray-500">Create tags first to assign them to this product.</p>
-              ) : (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {tags.map((tag) => {
-                    const checked = selectedTagIds.includes(tag.id);
+            <ProductTagPicker
+              tags={tags ?? []}
+              selectedIds={selectedTagIds}
+              onChange={(nextIds) => setSelectedTagIdsOverride(nextIds)}
+              title={t.productForm.tags}
+              description={t.productForm.editTagsDesc}
+              searchPlaceholder={t.productForm.tagSearchPlaceholder}
+              selectedLabel={t.productForm.selectedTags}
+              emptyState={t.productForm.emptyTagsEdit}
+              noMatches={t.productForm.noTagMatches}
+            />
 
-                    return (
-                      <label key={tag.id} className="flex items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleTag(tag.id)}
-                          className="h-4 w-4"
-                        />
-                        <span>{tag.name}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ProductRelationEditor
+                storeId={storeId}
+                currentProductId={productId}
+                relationType="upsell"
+                title={t.productForm.upsellProducts}
+                description={t.productForm.upsellDesc}
+                searchPlaceholder={t.productForm.relatedSearchPlaceholder}
+                emptyState={t.productForm.noUpsellProducts}
+                noMatches={t.productForm.noRelatedMatches}
+                relations={relationDrafts.filter((relation) => relation.relation_type === 'upsell')}
+                onChange={(nextRelations) => setRelationDraftsOverride((current) => ([
+                  ...(current ?? relationDrafts).filter((relation) => relation.relation_type !== 'upsell'),
+                  ...nextRelations,
+                ]))}
+              />
+              <ProductRelationEditor
+                storeId={storeId}
+                currentProductId={productId}
+                relationType="cross_sell"
+                title={t.productForm.crossSellProducts}
+                description={t.productForm.crossSellDesc}
+                searchPlaceholder={t.productForm.relatedSearchPlaceholder}
+                emptyState={t.productForm.noCrossSellProducts}
+                noMatches={t.productForm.noRelatedMatches}
+                relations={relationDrafts.filter((relation) => relation.relation_type === 'cross_sell')}
+                onChange={(nextRelations) => setRelationDraftsOverride((current) => ([
+                  ...(current ?? relationDrafts).filter((relation) => relation.relation_type !== 'cross_sell'),
+                  ...nextRelations,
+                ]))}
+              />
             </div>
 
             <div className="space-y-4 rounded-lg border border-gray-200 p-4">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Media</h2>
-                <p className="text-sm text-gray-600">Upload PNG/JPG/WEBP, manage order, and edit alt/caption.</p>
+                <h2 className="text-lg font-semibold text-gray-900">{t.productForm.media}</h2>
+                <p className="text-sm text-gray-600">{t.productForm.mediaDesc}</p>
               </div>
 
               {imageError && (
@@ -474,7 +526,7 @@ export default function EditProductPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="product-images">Upload images</Label>
+                <Label htmlFor="product-images">{t.productForm.uploadImages}</Label>
                 <Input
                   id="product-images"
                   type="file"
@@ -486,11 +538,11 @@ export default function EditProductPage() {
                   }}
                   disabled={createImageMutation.isPending}
                 />
-                <p className="text-xs text-gray-500">First image (position 0) is used as the primary image.</p>
+                <p className="text-xs text-gray-500">{t.productForm.primaryImageHint}</p>
               </div>
 
               {!productImages || productImages.length === 0 ? (
-                <p className="text-sm text-gray-500">No images uploaded yet.</p>
+                <p className="text-sm text-gray-500">{t.productForm.noImages}</p>
               ) : (
                 <div className="space-y-3">
                   {[...productImages]
@@ -500,40 +552,52 @@ export default function EditProductPage() {
                       return (
                         <div key={image.id} className="rounded-md border border-gray-200 p-3">
                           <div className="flex flex-col gap-3 md:flex-row">
-                            <img
-                              src={resolveMediaUrl(image.url_thumbnail || image.url)}
-                              alt={image.alt_text || product.title}
-                              className="h-24 w-24 rounded-md object-cover"
-                            />
+                            <div className="relative h-24 w-24 overflow-hidden rounded-md">
+                              <Image
+                                src={resolveMediaUrl(image.url_thumbnail || image.url)}
+                                alt={image.alt_text || product.title}
+                                fill
+                                unoptimized
+                                className="object-cover"
+                                onError={(event) => {
+                                  const fallbackSrc = resolveMediaUrl(image.url);
+                                  const imageElement = event.currentTarget as HTMLImageElement;
+                                  if (imageElement.src !== fallbackSrc) {
+                                    imageElement.onerror = null;
+                                    imageElement.src = fallbackSrc;
+                                  }
+                                }}
+                              />
+                            </div>
                             <div className="flex-1 space-y-2">
                               <div className="flex items-center justify-between text-xs text-gray-600">
-                                <span>Position: {image.position}</span>
-                                {index === 0 ? <span className="font-semibold text-green-700">Primary image</span> : null}
+                                <span>{t.productForm.position}: {image.position}</span>
+                                {index === 0 ? <span className="font-semibold text-green-700">{t.productForm.primaryImage}</span> : null}
                               </div>
 
                               <Input
-                                placeholder="Alt text"
+                                placeholder={t.productForm.altText}
                                 value={draft.alt_text}
                                 onChange={(event) => updateDraft(image.id, { alt_text: event.target.value })}
                               />
                               <Input
-                                placeholder="Caption"
+                                placeholder={t.productForm.caption}
                                 value={draft.caption}
                                 onChange={(event) => updateDraft(image.id, { caption: event.target.value })}
                               />
 
                               <div className="flex flex-wrap gap-2">
                                 <Button type="button" variant="outline" size="sm" onClick={() => void moveImage(image.id, 'up')} disabled={index === 0 || reorderImageMutation.isPending}>
-                                  Move Up
+                                  {t.productForm.moveUp}
                                 </Button>
                                 <Button type="button" variant="outline" size="sm" onClick={() => void moveImage(image.id, 'down')} disabled={index === productImages.length - 1 || reorderImageMutation.isPending}>
-                                  Move Down
+                                  {t.productForm.moveDown}
                                 </Button>
                                 <Button type="button" variant="outline" size="sm" onClick={() => void saveImageMeta(image.id, image.alt_text, image.caption)} disabled={updateImageMutation.isPending}>
-                                  Save Metadata
+                                  {t.productForm.saveMetadata}
                                 </Button>
                                 <Button type="button" variant="destructive" size="sm" onClick={() => void removeImage(image.id)} disabled={deleteImageMutation.isPending}>
-                                  Delete
+                                  {t.productForm.deleteImage}
                                 </Button>
                               </div>
                             </div>
@@ -547,14 +611,14 @@ export default function EditProductPage() {
 
             <div className="flex gap-2">
               <Button type="button" variant="outline" className="w-full" asChild>
-                <Link href="/dashboard/products">Cancel</Link>
+                <Link href="/dashboard/products">{t.productForm.cancel}</Link>
               </Button>
               <Button
                 type="submit"
                 className="w-full"
-                disabled={updateProductMutation.isPending || assignTagsMutation.isPending}
+                disabled={updateProductMutation.isPending || assignTagsMutation.isPending || replaceRelationsMutation.isPending}
               >
-                {updateProductMutation.isPending || assignTagsMutation.isPending ? 'Updating...' : 'Update Product'}
+                {updateProductMutation.isPending || assignTagsMutation.isPending || replaceRelationsMutation.isPending ? t.productForm.updating : t.productForm.update}
               </Button>
             </div>
           </form>

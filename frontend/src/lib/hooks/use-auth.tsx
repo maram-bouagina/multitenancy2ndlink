@@ -64,11 +64,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         return userStores[0];
       });
-    } catch (error) {
-      console.error('Failed to load stores:', error);
-    } finally {
-      setStoresLoaded(true);
-    }
+    }  catch (error: any) {
+    if (error?.response?.status === 401) return; 
+    console.error('Failed to load stores:', error);
+  } finally {
+    setStoresLoaded(true);
+  }
   }, []);
 
   useEffect(() => {
@@ -83,11 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [isAuthenticated, isPending, storesLoaded, sessionToken, loadStores]);
 
   const logout = useCallback(() => {
-    void authClient.signOut().then(() => {
-      setStores([]);
-      setCurrentStore(null);
-      setStoresLoaded(false);
-    });
+    void authClient.signOut()
   }, []);
 
   const refreshStores = async () => {

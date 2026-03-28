@@ -23,12 +23,13 @@ func main() {
 	}
 
 	jwt.Init(cfg.JWTSecret)
-
-	app := fiber.New()
-
+	app := fiber.New(fiber.Config{
+		ReadBufferSize: 16384,
+	})
 	// Enable CORS for local development (Next.js running on localhost:3000)
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     "http://localhost:3000",
+		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		AllowCredentials: true,
 	}))

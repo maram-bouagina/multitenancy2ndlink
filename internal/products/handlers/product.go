@@ -31,20 +31,25 @@ func NewProductHandler(
 }
 
 // POST /api/stores/:storeId/products
+// POST /api/stores/:storeId/products
 func (h *ProductHandler) Create(c *fiber.Ctx) error {
 	storeID, err := parseStoreID(c)
 	if err != nil {
 		return err
 	}
 	db := helpers.GetTenantDB(c)
+
+	tenantID, _ := c.Locals("tenantID").(string) // add this line
+
 	var req dto.CreateProductRequest
 	if err := helpers.ParseBody(c, &req); err != nil {
 		return err
 	}
-	resp, err := h.svc.Create(db, storeID, req)
+	resp, err := h.svc.Create(db, tenantID, storeID, req) // pass tenantID here
 	if err != nil {
 		return helpers.Fail(c, fiber.StatusBadRequest, err)
 	}
+
 	return c.Status(fiber.StatusCreated).JSON(resp)
 }
 

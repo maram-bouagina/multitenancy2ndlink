@@ -65,14 +65,18 @@ export default function NewStorePage() {
     resolver: zodResolver(storeSchema),
   });
 
+  const [planError, setPlanError] = useState(false);
   const onSubmit = async (data: StoreForm) => {
     try {
       setError('');
+      setPlanError(false);
       const store = await createStoreMutation.mutateAsync(data);
       setCurrentStore(store);
       router.push('/dashboard');
-    } catch (error: unknown) {
-      setError(getApiErrorMessage(error, t.storeCreatePage.createFailed));
+    } catch (error: any) {
+      const msg = getApiErrorMessage(error, t.storeCreatePage.createFailed);
+      setError(msg);
+      if (msg && msg.toLowerCase().includes('plan')) setPlanError(true);
     }
   };
 
@@ -90,6 +94,11 @@ export default function NewStorePage() {
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
+                {planError && (
+                  <div className="mt-2">
+                    <a href="/dashboard/settings/plan" className="text-blue-600 underline">{t.storeCreatePage.upgradePlan || 'Upgrade your plan'}</a>
+                  </div>
+                )}
               </Alert>
             )}
 

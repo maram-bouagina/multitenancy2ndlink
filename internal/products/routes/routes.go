@@ -14,6 +14,8 @@ import (
 	"multitenancypfe/internal/products/handlers"
 	"multitenancypfe/internal/products/repo"
 	"multitenancypfe/internal/products/services"
+
+	authRepo "multitenancypfe/internal/auth/repo"
 )
 
 func RegisterProductRoutes(app *fiber.App, db *gorm.DB) {
@@ -51,8 +53,13 @@ func registerCatalog(store fiber.Router, db *gorm.DB) {
 }
 
 func registerProducts(store fiber.Router, db *gorm.DB, imageUploadSvc services.ProductImageUploadService, maxImageSizeMB int64) {
+	// Import the auth repo package at the top if not already imported:
+	// import authRepo "multitenancypfe/internal/auth/repo"
 	productHandler := handlers.NewProductHandler(
-		services.NewProductService(repo.NewProductRepository()),
+		services.NewProductService(
+			repo.NewProductRepository(),
+			authRepo.NewTenantRepository(db),
+		),
 		services.NewPricingService(),
 		services.NewPublicationValidationService(),
 	)

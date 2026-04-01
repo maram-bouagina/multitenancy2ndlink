@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { translations, type Lang } from '@/lib/i18n';
 
-type DashboardTranslations = typeof translations.en;
+type DashboardTranslations = Omit<typeof translations.en, 'plan'> & { plan: import('../i18n').PlanTranslations };
 
 interface LanguageContextValue {
   lang: Lang;

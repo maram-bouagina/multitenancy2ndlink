@@ -765,7 +765,7 @@ function createColorField(label: string | undefined, lang: PuckEditorLang) {
       const store = getStorefrontData()?.store;
       const primary = store?.theme_primary_color || "#2563eb";
       const secondary = store?.theme_secondary_color || "#0f172a";
-      const swatches = [
+      const swatches = [...new Set([
         primary,
         secondary,
         "#ffffff",
@@ -776,7 +776,7 @@ function createColorField(label: string | undefined, lang: PuckEditorLang) {
         "#22c55e",
         "#0ea5e9",
         "#8b5cf6",
-      ];
+      ])];
       return (
         <div className="space-y-2">
           <div className="flex items-center gap-2">

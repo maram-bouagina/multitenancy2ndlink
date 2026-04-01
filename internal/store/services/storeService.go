@@ -2,10 +2,13 @@ package services
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	authRepo "multitenancypfe/internal/auth/repo"
+	"multitenancypfe/internal/plans"
 	"multitenancypfe/internal/store/dto"
 	"multitenancypfe/internal/store/models"
 	"multitenancypfe/internal/store/repo"
@@ -23,14 +26,16 @@ type StoreService interface {
 }
 
 type storeService struct {
-	repo repo.StoreRepository
+	repo       repo.StoreRepository
+	tenantRepo authRepo.TenantRepository
 }
 
-func NewStoreService(r repo.StoreRepository) StoreService {
-	return &storeService{repo: r}
-}
+func NewStoreService(r repo.StoreRepository, tr authRepo.TenantRepository) StoreService {
+	return &storeService{repo: r, tenantRepo: tr}
 
+}
 func (s *storeService) Create(db *gorm.DB, tenantID string, req dto.CreateStoreRequest) (*dto.StoreResponse, error) {
+	// check slug uniqueness
 	existing, err := s.repo.FindBySlug(db, req.Slug)
 	if err != nil {
 		return nil, err
@@ -39,12 +44,22 @@ func (s *storeService) Create(db *gorm.DB, tenantID string, req dto.CreateStoreR
 		return nil, errors.New("slug already in use")
 	}
 
+	// fetch tenant plan and enforce store limit
+	plan, err := s.tenantRepo.FindPlan(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	limits := plans.Get(plan)
+
 	existingStores, err := s.repo.FindByTenantID(db, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	if len(existingStores) > 0 {
-		return nil, errors.New("tenant already has a store")
+	if !limits.CanCreateStore(len(existingStores)) {
+		return nil, fmt.Errorf(
+			"your %s plan allows a maximum of %d store(s). Upgrade your plan to create more.",
+			plan, limits.MaxStores,
+		)
 	}
 
 	store := &models.Store{

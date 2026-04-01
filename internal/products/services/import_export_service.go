@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -119,12 +120,21 @@ func ImportProductsFromFile(
 
 	ext := strings.ToLower(fh.Filename)
 	var rows [][]string
+	var embeddedImages map[int][][]byte
 
 	switch {
 	case strings.HasSuffix(ext, ".csv"):
 		rows, err = ParseCSV(f)
 	case strings.HasSuffix(ext, ".xlsx"):
-		rows, err = ParseXLSX(f)
+		// Read all bytes so we can parse twice (rows + pictures).
+		data, readErr := io.ReadAll(f)
+		if readErr != nil {
+			return nil, readErr
+		}
+		rows, err = ParseXLSX(bytes.NewReader(data))
+		if err == nil {
+			embeddedImages = extractXLSXEmbeddedImages(data, rows)
+		}
 	default:
 		return nil, errors.New("unsupported file format: use .csv or .xlsx")
 	}
@@ -132,7 +142,7 @@ func ImportProductsFromFile(
 		return nil, err
 	}
 
-	return applyProductRows(db, storeID, rows, r, imageUploadSvc, maxImageSizeMB)
+	return applyProductRows(db, storeID, rows, r, imageUploadSvc, maxImageSizeMB, embeddedImages)
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -166,8 +176,19 @@ func productToRow(p models.Product) []string {
 	if p.PublishedAt != nil {
 		row[20] = p.PublishedAt.Format("2006-01-02T15:04:05Z")
 	}
-	row[21] = ""
-	row[22] = ""
+	if len(p.Images) > 0 {
+		imgs := make([]models.ProductImage, len(p.Images))
+		copy(imgs, p.Images)
+		sort.Slice(imgs, func(i, j int) bool { return imgs[i].Position < imgs[j].Position })
+		row[21] = imgs[0].URL
+		if len(imgs) > 1 {
+			others := make([]string, 0, len(imgs)-1)
+			for _, img := range imgs[1:] {
+				others = append(others, img.URL)
+			}
+			row[22] = strings.Join(others, "|")
+		}
+	}
 	return row
 }
 
@@ -178,6 +199,7 @@ func applyProductRows(
 	r repo.ProductRepository,
 	imageUploadSvc ProductImageUploadService,
 	maxImageSizeMB int64,
+	embeddedImages map[int][][]byte,
 ) (*ImportResult, error) {
 	if len(rows) < 2 {
 		return &ImportResult{}, nil
@@ -448,15 +470,17 @@ func applyProductRows(
 			}
 		}
 
-		imageURLs := collectImageURLs(get(row, "image_url"), get(row, "image_urls"))
-		if imageUploadSvc != nil && targetProduct != nil && len(imageURLs) > 0 {
-			res.Warnings = append(
-				res.Warnings,
-				prefixLineWarnings(
-					lineNum,
+		if imageUploadSvc != nil && targetProduct != nil {
+			imageURLs := collectImageURLs(get(row, "image_url"), get(row, "image_urls"))
+			if len(imageURLs) > 0 {
+				res.Warnings = append(res.Warnings, prefixLineWarnings(lineNum,
 					importProductImages(context.Background(), db, storeID, targetProduct, imageURLs, title, imageUploadSvc, maxImageSizeMB),
-				)...,
-			)
+				)...)
+			} else if embedded, ok := embeddedImages[lineNo]; ok && len(embedded) > 0 {
+				res.Warnings = append(res.Warnings, prefixLineWarnings(lineNum,
+					importEmbeddedImages(context.Background(), db, storeID, targetProduct, embedded, title, imageUploadSvc, maxImageSizeMB),
+				)...)
+			}
 		}
 	}
 
@@ -587,10 +611,6 @@ func importProductImages(
 	maxImageSizeMB int64,
 ) []string {
 	imageSvc := NewProductImageService(repo.NewProductImageRepository(db))
-	existingImages, err := imageSvc.GetByProductID(storeID, product.ID)
-	if err == nil && len(*existingImages) > 0 {
-		return []string{"image import skipped because the product already has images"}
-	}
 
 	warnings := make([]string, 0)
 	for index, imageURL := range imageURLs {
@@ -618,6 +638,107 @@ func importProductImages(
 		}
 	}
 
+	return warnings
+}
+
+// extractXLSXEmbeddedImages scans each data row for pictures anchored in the
+// image_url / image_urls columns (or any column if those headers aren't found).
+// Returns a map of 0-based data-row index → raw image bytes.
+func extractXLSXEmbeddedImages(data []byte, rows [][]string) map[int][][]byte {
+	f, err := excelize.OpenReader(bytes.NewReader(data))
+	if err != nil {
+		return nil
+	}
+	sheets := f.GetSheetList()
+	if len(sheets) == 0 || len(rows) < 2 {
+		return nil
+	}
+	sheet := sheets[0]
+
+	// Find image columns from the header row.
+	imageCols := []int{}
+	for colIdx, h := range rows[0] {
+		lower := strings.ToLower(strings.TrimSpace(h))
+		if lower == "image_url" || lower == "image_urls" || lower == "image" || lower == "images" {
+			imageCols = append(imageCols, colIdx+1) // 1-indexed for excelize
+		}
+	}
+	// Fallback: scan columns 20-24 (where image_url sits in the default template).
+	if len(imageCols) == 0 {
+		for col := 20; col <= 24; col++ {
+			imageCols = append(imageCols, col)
+		}
+	}
+
+	result := map[int][][]byte{}
+	for dataIdx := 1; dataIdx < len(rows); dataIdx++ { // dataIdx is 0-based in rows, skip header
+		excelRow := dataIdx + 1 // +1 because Excel rows are 1-indexed and row 1 is the header
+		var rowImages [][]byte
+		for _, col := range imageCols {
+			cell, _ := excelize.CoordinatesToCellName(col, excelRow)
+			pics, picErr := f.GetPictures(sheet, cell)
+			if picErr != nil || len(pics) == 0 {
+				continue
+			}
+			for _, pic := range pics {
+				if len(pic.File) > 0 {
+					rowImages = append(rowImages, pic.File)
+				}
+			}
+		}
+		if len(rowImages) > 0 {
+			result[dataIdx-1] = rowImages // 0-based data row index used in applyProductRows
+		}
+	}
+	return result
+}
+
+// importEmbeddedImages uploads raw image bytes that were embedded directly in
+// the Excel file (as opposed to remote URLs).
+func importEmbeddedImages(
+	ctx context.Context,
+	db *gorm.DB,
+	storeID uuid.UUID,
+	product *models.Product,
+	images [][]byte,
+	defaultAltText string,
+	imageUploadSvc ProductImageUploadService,
+	maxImageSizeMB int64,
+) []string {
+	imageSvc := NewProductImageService(repo.NewProductImageRepository(db))
+	warnings := make([]string, 0)
+
+	for i, imgBytes := range images {
+		if len(imgBytes) == 0 {
+			continue
+		}
+		contentType := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(imgBytes), ";")[0]))
+		ext := ".jpg"
+		switch contentType {
+		case "image/png":
+			ext = ".png"
+		case "image/webp":
+			ext = ".webp"
+		}
+		filename := fmt.Sprintf("imported-image-%d%s", i+1, ext)
+
+		position := i
+		altText := strings.TrimSpace(defaultAltText)
+		var altTextPtr *string
+		if altText != "" {
+			altTextPtr = &altText
+		}
+
+		if _, err := imageUploadSvc.CreateFromBytes(ctx, imageSvc, storeID, product.ID, ProductImageUploadInput{
+			Filename:    filename,
+			ContentType: contentType,
+			Data:        imgBytes,
+			AltText:     altTextPtr,
+			Position:    &position,
+		}); err != nil {
+			warnings = append(warnings, fmt.Sprintf("embedded image %d could not be imported: %s", i+1, err))
+		}
+	}
 	return warnings
 }
 

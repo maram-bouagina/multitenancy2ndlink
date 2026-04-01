@@ -17,6 +17,10 @@ type TenantRepository interface {
 	Delete(id string) error
 	Restore(id string) error
 	FindByEmailIncludeDeleted(email string) (*models.Tenant, error)
+
+	FindPlan(tenantID string) (string, error)
+	// UpdatePlan updates the plan for a tenant.
+	UpdatePlan(tenantID string, newPlan string) error
 }
 
 type tenantRepository struct {
@@ -78,4 +82,28 @@ func (r *tenantRepository) Restore(id string) error {
 	return r.db.Model(&models.Tenant{}).
 		Where("id = ?", id).
 		Update("deleted_at", nil).Error
+}
+
+func (r *tenantRepository) FindPlan(tenantID string) (string, error) {
+	var result struct {
+		Plan string `gorm:"column:plan"`
+	}
+	err := r.db.Raw(
+		`SELECT plan FROM public.tenants WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+		tenantID,
+	).Scan(&result).Error
+	if err != nil {
+		return "free", err
+	}
+	if result.Plan == "" {
+		return "free", nil
+	}
+	return result.Plan, nil
+}
+
+// UpdatePlan updates the plan for a tenant.
+func (r *tenantRepository) UpdatePlan(tenantID string, newPlan string) error {
+	return r.db.Model(&models.Tenant{}).
+		Where("id = ? AND deleted_at IS NULL", tenantID).
+		Update("plan", newPlan).Error
 }

@@ -1,6 +1,80 @@
 export type Lang = 'en' | 'fr' | 'ar';
 
+export type PlanTranslations = {
+  [key: string]: string;
+  chooseTitle: string;
+  chooseDesc: string;
+  planFreeName: string;
+  planFreePrice: string;
+  planProName: string;
+  planProPrice: string;
+  planEnterpriseName: string;
+  planEnterprisePrice: string;
+  mostPopular: string;
+  stores: string;
+  products: string;
+  staff: string;
+  support: string;
+  payment: string;
+  planStores1: string;
+  planStores3: string;
+  planStoresUnlimited: string;
+  planProducts50: string;
+  planProducts500: string;
+  planProductsUnlimited: string;
+  planStaff2: string;
+  planStaff10: string;
+  planStaffUnlimited: string;
+  planSupportBasic: string;
+  planSupportPriority: string;
+  planSupportDedicated: string;
+  planPaymentNA: string;
+  planPaymentCardPaypal: string;
+  planPaymentCustom: string;
+  currentPlan: string;
+  upgrade: string;
+  trust: string;
+  contactSales: string;
+};
+
 const en = {
+    plan: {
+      chooseTitle: 'Choose Your Plan',
+      chooseDesc: 'Compare plans and select the best option for your business. Upgrade instantly when you’re ready.',
+      planFreeName: 'Free',
+      planFreePrice: '€0/mo',
+      planProName: 'Pro',
+      planProPrice: '€29/mo',
+      planEnterpriseName: 'Enterprise',
+      planEnterprisePrice: 'Contact us',
+      mostPopular: 'Most Popular',
+      stores: 'Stores',
+      products: 'Products',
+      staff: 'Staff Accounts',
+      support: 'Support',
+      payment: 'Payment Methods',
+      planStores1: '1',
+      planStores3: '3',
+      planStoresUnlimited: 'Unlimited',
+      planProducts50: '50',
+      planProducts500: '500',
+      planProductsUnlimited: 'Unlimited',
+      planStaff2: '2',
+      planStaff10: '10',
+      planStaffUnlimited: 'Unlimited',
+      planSupportBasic: 'Basic',
+      planSupportPriority: 'Priority',
+      planSupportDedicated: 'Dedicated',
+      planPaymentNA: 'N/A',
+      planPaymentCardPaypal: 'Credit card, PayPal',
+      planPaymentCustom: 'Custom',
+      currentPlan: 'Current Plan',
+      upgrade: 'Upgrade',
+      trust: 'Secure payment. Cancel anytime. Need more?',
+      contactSales: 'Contact sales',
+      planAndLimits: 'Plan & Limits',
+      planAndLimitsDesc: 'Manage your subscription and limits.',
+    },
   nav: {
     dashboard: 'Dashboard',
     stores: 'Stores',
@@ -747,6 +821,43 @@ const en = {
 };
 
 const fr = {
+  plan: {
+    chooseTitle: 'Choisissez votre formule',
+    chooseDesc: 'Comparez les formules et sélectionnez la meilleure option pour votre entreprise. Passez à la version supérieure à tout moment.',
+    planFreeName: 'Gratuit',
+    planFreePrice: '0€/mois',
+    planProName: 'Pro',
+    planProPrice: '29€/mois',
+    planEnterpriseName: 'Entreprise',
+    planEnterprisePrice: 'Contactez-nous',
+    mostPopular: 'Le plus populaire',
+    stores: 'Boutiques',
+    products: 'Produits',
+    staff: 'Comptes employés',
+    support: 'Support',
+    payment: 'Moyens de paiement',
+    planStores1: '1',
+    planStores3: '3',
+    planStoresUnlimited: 'Illimité',
+    planProducts50: '50',
+    planProducts500: '500',
+    planProductsUnlimited: 'Illimité',
+    planStaff2: '2',
+    planStaff10: '10',
+    planStaffUnlimited: 'Illimité',
+    planSupportBasic: 'Basique',
+    planSupportPriority: 'Prioritaire',
+    planSupportDedicated: 'Dédié',
+    planPaymentNA: 'N/A',
+    planPaymentCardPaypal: 'Carte bancaire, PayPal',
+    planPaymentCustom: 'Personnalisé',
+    currentPlan: 'Formule actuelle',
+    upgrade: 'Mettre à niveau',
+    trust: 'Paiement sécurisé. Résiliez à tout moment. Besoin de plus ?',
+    contactSales: 'Contacter les ventes',
+    planAndLimits: 'Formule & limites',
+    planAndLimitsDesc: 'Gérez votre abonnement et vos limites.',
+  },
   nav: {
     dashboard: 'Tableau de bord',
     stores: 'Boutiques',
@@ -1493,6 +1604,43 @@ const fr = {
 } satisfies typeof en;
 
 const ar = {
+  plan: {
+    chooseTitle: 'اختر خطتك',
+    chooseDesc: 'قارن الخطط واختر الأنسب لنشاطك التجاري. يمكنك الترقية فوراً متى شئت.',
+    planFreeName: 'مجاني',
+    planFreePrice: '0€/شهر',
+    planProName: 'برو',
+    planProPrice: '29€/شهر',
+    planEnterpriseName: 'مؤسسي',
+    planEnterprisePrice: 'تواصل معنا',
+    mostPopular: 'الأكثر شيوعاً',
+    stores: 'المتاجر',
+    products: 'المنتجات',
+    staff: 'حسابات الموظفين',
+    support: 'الدعم',
+    payment: 'طرق الدفع',
+    planStores1: '1',
+    planStores3: '3',
+    planStoresUnlimited: 'غير محدود',
+    planProducts50: '50',
+    planProducts500: '500',
+    planProductsUnlimited: 'غير محدود',
+    planStaff2: '2',
+    planStaff10: '10',
+    planStaffUnlimited: 'غير محدود',
+    planSupportBasic: 'أساسي',
+    planSupportPriority: 'أولوية',
+    planSupportDedicated: 'مخصص',
+    planPaymentNA: 'غير متاح',
+    planPaymentCardPaypal: 'بطاقة ائتمان، باي بال',
+    planPaymentCustom: 'مخصص',
+    currentPlan: 'الخطة الحالية',
+    upgrade: 'ترقية',
+    trust: 'دفع آمن. يمكنك الإلغاء في أي وقت. تحتاج المزيد؟',
+    contactSales: 'تواصل مع المبيعات',
+    planAndLimits: 'الخطة والحدود',
+    planAndLimitsDesc: 'إدارة اشتراكك والحدود.'
+  },
   nav: {
     dashboard: 'لوحة التحكم',
     stores: 'المتاجر',

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"multitenancypfe/internal/auth/dto"
 	"multitenancypfe/internal/auth/services"
+	"multitenancypfe/internal/database"
 	"multitenancypfe/internal/helpers"
 )
 
@@ -113,6 +115,28 @@ type TenantAuthHandler struct {
 	svc services.TenantAuthService
 }
 
+// PATCH /api/auth/tenant/plan
+func (h *TenantAuthHandler) UpdatePlan(c *fiber.Ctx) error {
+	tenantID, ok := c.Locals("userID").(string)
+	if !ok || tenantID == "" {
+		return helpers.Fail(c, fiber.StatusUnauthorized, errors.New("missing user in context"))
+	}
+	type reqBody struct {
+		Plan string `json:"plan"`
+	}
+	var req reqBody
+	if err := helpers.ParseBody(c, &req); err != nil {
+		return helpers.Fail(c, fiber.StatusBadRequest, err)
+	}
+	if req.Plan == "" {
+		return helpers.Fail(c, fiber.StatusBadRequest, errors.New("plan is required"))
+	}
+	if err := h.svc.UpdatePlan(tenantID, req.Plan); err != nil {
+		return helpers.Fail(c, fiber.StatusBadRequest, err)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func NewTenantAuthHandler(svc services.TenantAuthService) *TenantAuthHandler {
 	return &TenantAuthHandler{svc: svc}
 }
@@ -156,6 +180,7 @@ func (h *TenantAuthHandler) Me(c *fiber.Ctx) error {
 }
 
 func (h *TenantAuthHandler) Logout(c *fiber.Ctx) error {
+	// Clear legacy JWT cookie.
 	c.Cookie(&fiber.Cookie{
 		Name:     authCookieName,
 		Value:    "",
@@ -165,6 +190,20 @@ func (h *TenantAuthHandler) Logout(c *fiber.Ctx) error {
 		Path:     "/",
 		MaxAge:   -1,
 	})
+
+	// Clear Better Auth session: delete the DB row and expire the cookie.
+	if sessionToken := strings.TrimSpace(c.Cookies("better-auth.session_token")); sessionToken != "" {
+		_ = database.DB.Exec(`DELETE FROM public.session WHERE token = ?`, sessionToken).Error
+		c.Cookie(&fiber.Cookie{
+			Name:     "better-auth.session_token",
+			Value:    "",
+			HTTPOnly: true,
+			Secure:   isSecureCookie(),
+			SameSite: "Lax",
+			Path:     "/",
+			MaxAge:   -1,
+		})
+	}
 
 	return c.SendStatus(fiber.StatusNoContent)
 }

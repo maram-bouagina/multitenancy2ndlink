@@ -148,6 +148,7 @@ func (s *tenantService) Delete(id string) error {
 type TenantAuthService interface {
 	Login(req dto.LoginRequest) (*dto.LoginResponse, error)
 	GetTenantByID(id string) (*dto.TenantResponse, error)
+	UpdatePlan(tenantID string, newPlan string) error
 }
 
 type tenantAuthService struct {
@@ -156,6 +157,16 @@ type tenantAuthService struct {
 
 func NewTenantAuthService(r repo.TenantRepository) TenantAuthService {
 	return &tenantAuthService{repo: r}
+}
+
+// UpdatePlan updates the plan for a tenant.
+func (s *tenantAuthService) UpdatePlan(tenantID string, newPlan string) error {
+	// Optionally: validate newPlan against allowed plans
+	allowed := map[string]bool{"free": true, "pro": true, "enterprise": true}
+	if !allowed[newPlan] {
+		return errors.New("invalid plan")
+	}
+	return s.repo.UpdatePlan(tenantID, newPlan)
 }
 
 func (s *tenantAuthService) Login(req dto.LoginRequest) (*dto.LoginResponse, error) {
@@ -169,6 +180,10 @@ func (s *tenantAuthService) Login(req dto.LoginRequest) (*dto.LoginResponse, err
 
 	if err := bcrypt.CompareHashAndPassword([]byte(tenant.PasswordHash), []byte(req.Password)); err != nil {
 		return nil, errors.New("invalid credentials")
+	}
+
+	if tenant.Status == "suspended" {
+		return nil, errors.New("account is suspended")
 	}
 
 	token, err := jwt.Generate(tenant.ID, "tenant")

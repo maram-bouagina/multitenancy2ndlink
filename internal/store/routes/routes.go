@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 
+	authRepo "multitenancypfe/internal/auth/repo"
 	"multitenancypfe/internal/media"
 	"multitenancypfe/internal/middleware"
 	storeHandlers "multitenancypfe/internal/store/handlers"
@@ -19,7 +20,7 @@ func RegisterStoreRoutes(app *fiber.App, db *gorm.DB) {
 		log.Fatalf("store media storage initialization failed: %v", err)
 	}
 
-	h := storeHandlers.NewStoreHandler(services.NewStoreService(repo.NewStoreRepository()), storage)
+	h := storeHandlers.NewStoreHandler(services.NewStoreService(repo.NewStoreRepository(), authRepo.NewTenantRepository(db)), storage)
 
 	g := app.Group("/api/stores",
 		middleware.RequireAuth(),

@@ -1,2 +1,0 @@
-title,slug,description,status,visibility,price,sale_price,currency,sku,track_stock,stock,low_stock_threshold,weight,dimensions,brand,tax_class,category_slug,category_name,category_id,image_url,image_urls
-T-Shirt Classic,tshirt-classic,Basic cotton tee,published,public,19.99,,USD,TS-001,true,100,5,0.2,,Acme,standard,apparel,Apparel,,https://images.unsplash.com/photo-1521572267360-ee0c2909d518,

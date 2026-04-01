@@ -54,6 +54,7 @@ export default function NewProductPage() {
   const { t } = useLanguage();
   const storeId = currentStore?.id || '';
   const [error, setError] = useState<string>('');
+  const [planError, setPlanError] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [primaryImage, setPrimaryImage] = useState<File | null>(null);
   const [secondaryFiles, setSecondaryFiles] = useState<File[]>([]);
@@ -83,6 +84,7 @@ export default function NewProductPage() {
 
     try {
       setError('');
+      setPlanError(false);
       const payload = {
         ...data,
         slug: optionalString(data.slug),
@@ -130,8 +132,10 @@ export default function NewProductPage() {
       }
 
       router.push('/dashboard/products');
-    } catch (error: unknown) {
-      setError(getApiErrorMessage(error, t.productForm.createFailed));
+    } catch (error: any) {
+      const msg = getApiErrorMessage(error, t.productForm.createFailed);
+      setError(msg);
+      if (msg && msg.toLowerCase().includes('plan')) setPlanError(true);
     }
   };
 
@@ -145,10 +149,15 @@ export default function NewProductPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
+                {planError && (
+                  <div className="mt-2">
+                    <a href="/dashboard/settings/plan" className="text-blue-600 underline">Upgrade your plan</a>
+                  </div>
+                )}
               </Alert>
             )}
 

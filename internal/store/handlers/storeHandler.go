@@ -108,7 +108,6 @@ func (h *StoreHandler) PublishCustomization(c *fiber.Ctx) error {
 	if err != nil {
 		return authHandlers.Fail(c, fiber.StatusBadRequest, err)
 	}
-
 	return c.JSON(resp)
 }
 
@@ -137,6 +136,7 @@ func (h *StoreHandler) Delete(c *fiber.Ctx) error {
 		return err
 	}
 	db := authHandlers.GetTenantDB(c)
+
 	if err := h.svc.Delete(db, id); err != nil {
 		return authHandlers.Fail(c, fiber.StatusNotFound, err)
 	}

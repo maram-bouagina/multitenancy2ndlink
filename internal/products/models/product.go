@@ -48,7 +48,8 @@ type Product struct {
 	DeletedAt         *time.Time        `gorm:"type:timestamptz;index" json:"-"`
 
 	// Relations
-	Category    *Category    `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
-	Collections []Collection `gorm:"many2many:collection_products;" json:"collections,omitempty"`
-	Tags        []Tag        `gorm:"many2many:product_tags;" json:"tags,omitempty"`
+	Category    *Category      `gorm:"foreignKey:CategoryID"         json:"category,omitempty"`
+	Images      []ProductImage `gorm:"foreignKey:ProductID"          json:"images,omitempty"`
+	Collections []Collection   `gorm:"many2many:collection_products;" json:"collections,omitempty"`
+	Tags        []Tag          `gorm:"many2many:product_tags;"        json:"tags,omitempty"`
 }

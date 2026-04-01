@@ -8,6 +8,7 @@ import (
 
 	"multitenancypfe/internal/database"
 	"multitenancypfe/internal/jwt"
+	storeModels "multitenancypfe/internal/store/models"
 )
 
 const authCookieName = "auth_token"
@@ -128,6 +129,15 @@ func RequireCustomerBetterAuth() fiber.Handler {
 
 		if user.Role == nil || *user.Role != "customer" {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "not a customer"})
+		}
+
+		// Validate that this customer belongs to the current store.
+		store, _ := c.Locals("sfStore").(*storeModels.Store)
+		if store == nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "store context missing"})
+		}
+		if user.StoreID == nil || *user.StoreID != store.ID.String() {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "not authorized for this store"})
 		}
 
 		c.Locals("customerID", userID)

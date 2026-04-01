@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	authRepo "multitenancypfe/internal/auth/repo"
+	"multitenancypfe/internal/plans"
 	"multitenancypfe/internal/products/dto"
 	"multitenancypfe/internal/products/models"
 	"multitenancypfe/internal/products/repo"
@@ -16,7 +18,7 @@ import (
 
 // Interface du service pour les produits
 type ProductService interface {
-	Create(db *gorm.DB, storeID uuid.UUID, req dto.CreateProductRequest) (*dto.ProductResponse, error)
+	Create(db *gorm.DB, tenantID string, storeID uuid.UUID, req dto.CreateProductRequest) (*dto.ProductResponse, error)
 	GetByID(db *gorm.DB, id, storeID uuid.UUID) (*dto.ProductResponse, error)
 	GetAll(db *gorm.DB, storeID uuid.UUID, filter dto.ProductFilter) (*dto.ProductListResponse, error)
 	Update(db *gorm.DB, id, storeID uuid.UUID, req dto.UpdateProductRequest) (*dto.ProductResponse, error)
@@ -27,15 +29,16 @@ type ProductService interface {
 }
 
 type productService struct {
-	repo repo.ProductRepository
+	repo       repo.ProductRepository
+	tenantRepo authRepo.TenantRepository // Ajout du tenantRepo pour vérifier les limites de produits par magasin
 }
 
-func NewProductService(r repo.ProductRepository) ProductService {
-	return &productService{repo: r}
+func NewProductService(r repo.ProductRepository, tr authRepo.TenantRepository) ProductService {
+	return &productService{repo: r, tenantRepo: tr}
 }
 
 // Crée un produit avec slug unique
-func (s *productService) Create(db *gorm.DB, storeID uuid.UUID, req dto.CreateProductRequest) (*dto.ProductResponse, error) {
+func (s *productService) Create(db *gorm.DB, tenantID string, storeID uuid.UUID, req dto.CreateProductRequest) (*dto.ProductResponse, error) {
 	slug := resolveSlug(req.Slug, req.Title)
 	exists, err := s.repo.SlugExists(db, slug, storeID, nil)
 	if err != nil {
@@ -45,14 +48,33 @@ func (s *productService) Create(db *gorm.DB, storeID uuid.UUID, req dto.CreatePr
 		return nil, errors.New("slug already in use")
 	}
 
-	// Validation for public products
+	// fetch tenant plan and enforce product limit
+	plan, err := s.tenantRepo.FindPlan(tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	limits := plans.Get(plan)
+
+	count, err := s.repo.CountByStoreID(db, storeID)
+	if err != nil {
+		return nil, err
+	}
+	if !limits.CanCreateProduct(count) {
+		return nil, fmt.Errorf(
+			"your %s plan allows a maximum of %d product(s). Upgrade your plan to create more.",
+			plan, limits.MaxProducts,
+		)
+	}
+
+	// validation for public products
 	if req.Visibility == models.VisibilityPublic {
 		if req.Price <= 0 {
 			return nil, errors.New("price must be greater than 0 for public products")
 		}
 	}
 
-	// Vérification logique des soldes
+	// sale date logic
 	if req.SalePrice != nil && req.SaleStart != nil && req.SaleEnd != nil && req.SaleEnd.Before(*req.SaleStart) {
 		return nil, errors.New("sale end date cannot be before start date")
 	}

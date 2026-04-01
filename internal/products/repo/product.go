@@ -25,6 +25,7 @@ type ProductRepository interface {
 	GetTotalReservedStock(db *gorm.DB, productID uuid.UUID) (int, error)
 	CreateReservation(db *gorm.DB, reservation *models.StockReservation) error
 	UserHasReservation(db *gorm.DB, productID uuid.UUID, userID string) (bool, error)
+	CountByStoreID(db *gorm.DB, storeID uuid.UUID) (int, error)
 }
 
 type productRepository struct {
@@ -33,6 +34,13 @@ type productRepository struct {
 // Création d'un nouveau repository
 func NewProductRepository() ProductRepository {
 	return &productRepository{}
+}
+func (r *productRepository) CountByStoreID(db *gorm.DB, storeID uuid.UUID) (int, error) {
+	var count int64
+	err := db.Model(&models.Product{}).
+		Where("store_id = ? AND deleted_at IS NULL", storeID).
+		Count(&count).Error
+	return int(count), err
 }
 
 // Crée un produit en base
@@ -155,6 +163,9 @@ func (r *productRepository) CountAll(db *gorm.DB, storeID uuid.UUID, filter dto.
 func (r *productRepository) FindAllForExport(db *gorm.DB, storeID uuid.UUID) ([]models.Product, error) {
 	var products []models.Product
 	err := db.Preload("Category").
+		Preload("Images", func(db *gorm.DB) *gorm.DB {
+			return db.Where("deleted_at IS NULL").Order("position ASC")
+		}).
 		Where("store_id = ? AND deleted_at IS NULL", storeID).
 		Order("created_at DESC").
 		Find(&products).Error

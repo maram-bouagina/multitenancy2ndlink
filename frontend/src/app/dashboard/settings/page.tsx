@@ -31,6 +31,13 @@ export default function SettingsPage() {
       disabled: false,
     },
     {
+      title: t.plan.planAndLimits,
+      description: t.plan.planAndLimitsDesc,
+      href: '/dashboard/settings/plan',
+      icon: Shield,
+      disabled: false,
+    },
+    {
       title: t.settings.notifications,
       description: t.settings.notificationsDesc,
       href: '/dashboard/settings',

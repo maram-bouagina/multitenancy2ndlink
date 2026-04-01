@@ -26,6 +26,7 @@ func registerLoginRoutes(api fiber.Router, db *gorm.DB) {
 	auth.Post("/tenant/login", h.Login)
 	auth.Post("/tenant/logout", h.Logout)
 	auth.Get("/tenant/me", middleware.RequireAuth(), h.Me)
+	auth.Patch("/tenant/plan", middleware.RequireAuth(), h.UpdatePlan)
 }
 
 func registerAdminRoutes(api fiber.Router, db *gorm.DB) {

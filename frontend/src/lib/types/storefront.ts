@@ -23,6 +23,11 @@ export interface CategoryPublic {
   name: string;
   slug: string;
   description?: string;
+  meta_title?: string;
+  meta_description?: string;
+  canonical_url?: string;
+  noindex?: boolean;
+  image_url?: string;
   children?: CategoryPublic[];
 }
 
@@ -30,6 +35,12 @@ export interface CollectionPublic {
   id: string;
   name: string;
   slug: string;
+  description?: string;
+  meta_title?: string;
+  meta_description?: string;
+  canonical_url?: string;
+  noindex?: boolean;
+  image_url?: string;
 }
 
 export interface ProductImagePublic {
@@ -57,6 +68,10 @@ export interface ProductPublic {
   weight?: number;
   dimensions?: string;
   tax_class?: string;
+  meta_title?: string;
+  meta_description?: string;
+  canonical_url?: string;
+  noindex?: boolean;
   track_stock: boolean;
   in_stock: boolean;
   stock: number;

@@ -7,7 +7,6 @@ import {
   useReactTable,
   getCoreRowModel,
   getFilteredRowModel,
-  getPaginationRowModel,
   getSortedRowModel,
   RowSelectionState,
   ColumnDef,
@@ -39,11 +38,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ListPagination } from '@/components/dashboard/list-pagination';
 import { getApiErrorMessage } from '@/lib/api/errors';
 import { useCloneProduct, useProducts, useDeleteProduct, useUpdateProduct } from '@/lib/hooks/use-api';
 import { apiClient } from '@/lib/api/client';
 import { Product } from '@/lib/types';
-import { Plus, MoreHorizontal, Search, Edit, Trash2, Eye, Download, Upload, Copy } from 'lucide-react';
+import { Plus, MoreHorizontal, Search, Edit, Trash2, Eye, Download, Upload, Copy, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { useLanguage } from '@/lib/hooks/use-language';
@@ -54,6 +54,8 @@ function interpolate(template: string, values: Record<string, string | number>) 
     template
   );
 }
+
+const PAGE_SIZE = 20;
 
 export default function ProductsPage() {
   const { currentStore, isAuthenticated } = useAuth();
@@ -74,6 +76,7 @@ export default function ProductsPage() {
     sort_by: 'newest' | 'oldest' | 'price_asc' | 'price_desc';
   }>({ sort_by: 'newest' });
   const [bulkStatus, setBulkStatus] = useState('');
+  const [bulkVisibility, setBulkVisibility] = useState('');
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -88,10 +91,19 @@ export default function ProductsPage() {
   const [cloneError, setCloneError] = useState('');
   const [filterMessage, setFilterMessage] = useState('');
   const [isPending, startTransition] = useTransition();
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isSelectingAllProducts, setIsSelectingAllProducts] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
-  const productFilters = useMemo(() => appliedFilters, [appliedFilters]);
+  const productFilters = useMemo(
+    () => ({
+      ...appliedFilters,
+      page: currentPage,
+      limit: PAGE_SIZE,
+    }),
+    [appliedFilters, currentPage]
+  );
 
   const { data: productsResponse, isLoading, refetch } = useProducts(activeStoreId, productFilters);
   const deleteProductMutation = useDeleteProduct();
@@ -99,6 +111,78 @@ export default function ProductsPage() {
   const cloneProductMutation = useCloneProduct();
 
   const products = productsResponse?.data || [];
+  const totalProducts = productsResponse?.total ?? 0;
+  const totalPages = Math.max(productsResponse?.total_pages ?? 1, 1);
+  const selectedProductIds = useMemo(() => Object.keys(rowSelection).filter((id) => rowSelection[id]), [rowSelection]);
+  const allFilteredSelected = totalProducts > 0 && selectedProductIds.length === totalProducts;
+  const someFilteredSelected = selectedProductIds.length > 0 && !allFilteredSelected;
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someFilteredSelected;
+    }
+  }, [someFilteredSelected]);
+
+  const fetchFilteredProductIds = async () => {
+    if (!activeStoreId) {
+      return [] as string[];
+    }
+
+    const params = { ...appliedFilters, page: 1, limit: 100 };
+    const firstPage = await apiClient.getProducts(activeStoreId, params);
+    const matchingIds = firstPage.data.map((product) => product.id);
+
+    if (firstPage.total_pages <= 1) {
+      return matchingIds;
+    }
+
+    const remainingPages = await Promise.all(
+      Array.from({ length: firstPage.total_pages - 1 }, (_, index) =>
+        apiClient.getProducts(activeStoreId, { ...params, page: index + 2 })
+      )
+    );
+
+    return Array.from(
+      new Set([
+        ...matchingIds,
+        ...remainingPages.flatMap((response) => response.data.map((product) => product.id)),
+      ])
+    );
+  };
+
+  const toggleSelectAllProducts = async (checked: boolean) => {
+    if (!activeStoreId) return;
+
+    setIsSelectingAllProducts(true);
+    try {
+      const filteredProductIds = await fetchFilteredProductIds();
+      setRowSelection((current) => {
+        const next = { ...current };
+
+        if (checked) {
+          filteredProductIds.forEach((productId) => {
+            next[productId] = true;
+          });
+          return next;
+        }
+
+        filteredProductIds.forEach((productId) => {
+          delete next[productId];
+        });
+        return next;
+      });
+    } catch (error) {
+      console.error('Failed to select all filtered products:', error);
+    } finally {
+      setIsSelectingAllProducts(false);
+    }
+  };
 
   const getStatusLabel = (status: Product['status']) => {
     switch (status) {
@@ -168,9 +252,9 @@ export default function ProductsPage() {
       const warnings = Array.isArray(result.warnings) ? result.warnings : [];
       setImportMessage(
         interpolate(t.productsPage.importSummary, {
-          imported: result.imported,
-          updated: result.updated,
-          skipped: result.skipped,
+          imported: result.imported ?? 0,
+          updated: result.updated ?? 0,
+          skipped: result.skipped ?? 0,
           warnings: warnings.length,
           errors: errors.length,
         })
@@ -185,19 +269,19 @@ export default function ProductsPage() {
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
   const handleDeleteSelected = async () => {
     if (!activeStoreId) return;
-    const selectedProducts = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
-    if (selectedProducts.length === 0) return;
-    if (!confirm(interpolate(t.productsPage.deleteSelectedConfirm, { count: selectedProducts.length }))) return;
+    if (selectedProductIds.length === 0) return;
+    if (!confirm(interpolate(t.productsPage.deleteSelectedConfirm, { count: selectedProductIds.length }))) return;
 
     try {
       const results = await Promise.allSettled(
-        selectedProducts.map((product) =>
-          deleteProductMutation.mutateAsync({ storeId: activeStoreId, productId: product.id })
+        selectedProductIds.map((productId) =>
+          deleteProductMutation.mutateAsync({ storeId: activeStoreId, productId })
         )
       );
 
@@ -208,7 +292,7 @@ export default function ProductsPage() {
       );
 
       if (failures.length === 0) {
-        table.resetRowSelection();
+        setRowSelection({});
       } else {
         console.error('Delete failures', failures);
         alert(t.productsPage.deleteFailed);
@@ -220,28 +304,54 @@ export default function ProductsPage() {
 
   const handleBulkStatusUpdate = async () => {
     if (!activeStoreId || !bulkStatus) return;
-    const selectedProducts = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
-    if (selectedProducts.length === 0) return;
+    if (selectedProductIds.length === 0) return;
     if (!confirm(interpolate(t.productsPage.bulkStatusConfirm, {
       status: getStatusLabel(bulkStatus as Product['status']),
-      count: selectedProducts.length,
+      count: selectedProductIds.length,
     }))) return;
 
     try {
       await Promise.all(
-        selectedProducts.map((product) =>
+        selectedProductIds.map((productId) =>
           updateProductMutation.mutateAsync({
             storeId: activeStoreId,
-            productId: product.id,
+            productId,
             data: { status: bulkStatus as 'draft' | 'published' | 'archived' },
           })
         )
       );
-      table.resetRowSelection();
+      setRowSelection({});
       setBulkStatus('');
       refetch();
     } catch (error) {
       console.error('Failed to update selected products:', error);
+      alert(t.productsPage.bulkUpdateFailed);
+    }
+  };
+
+  const handleBulkVisibilityUpdate = async () => {
+    if (!activeStoreId || !bulkVisibility) return;
+    if (selectedProductIds.length === 0) return;
+    if (!confirm(interpolate(t.productsPage.bulkVisibilityConfirm, {
+      visibility: getVisibilityLabel(bulkVisibility as Product['visibility']),
+      count: selectedProductIds.length,
+    }))) return;
+
+    try {
+      await Promise.all(
+        selectedProductIds.map((productId) =>
+          updateProductMutation.mutateAsync({
+            storeId: activeStoreId,
+            productId,
+            data: { visibility: bulkVisibility as 'public' | 'private' },
+          })
+        )
+      );
+      setRowSelection({});
+      setBulkVisibility('');
+      refetch();
+    } catch (error) {
+      console.error('Failed to update product visibility:', error);
       alert(t.productsPage.bulkUpdateFailed);
     }
   };
@@ -269,6 +379,8 @@ export default function ProductsPage() {
 
     setFilterMessage('');
     startTransition(() => {
+      setCurrentPage(1);
+      setRowSelection({});
       setAppliedFilters({
         search: globalFilter.trim() || undefined,
         status: statusFilter || undefined,
@@ -288,6 +400,8 @@ export default function ProductsPage() {
     setMaxPriceFilter('');
     setSortBy('newest');
     setFilterMessage('');
+    setCurrentPage(1);
+    setRowSelection({});
     setAppliedFilters({ sort_by: 'newest' });
   };
 
@@ -338,24 +452,9 @@ export default function ProductsPage() {
         <input
           type="checkbox"
           ref={selectAllRef}
-          checked={table.getFilteredRowModel().rows.length > 0 && table.getFilteredRowModel().rows.every((row) => row.getIsSelected())}
-          onChange={(event) => {
-            const shouldSelect = !!event.target.checked;
-            const filteredRows = table.getFilteredRowModel().rows;
-            table.setRowSelection((current) => {
-              const next = { ...current };
-              if (shouldSelect) {
-                filteredRows.forEach((row) => {
-                  next[row.id] = true;
-                });
-              } else {
-                filteredRows.forEach((row) => {
-                  delete next[row.id];
-                });
-              }
-              return next;
-            });
-          }}
+          checked={allFilteredSelected}
+          disabled={isSelectingAllProducts || totalProducts === 0}
+          onChange={(event) => void toggleSelectAllProducts(!!event.target.checked)}
           aria-label="Select all"
         />
       ),
@@ -426,13 +525,13 @@ export default function ProductsPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem asChild>
-                <Link href={`/dashboard/products/${product.id}/details`}>
+                <Link href={`/dashboard/products/${product.id}/details`} prefetch={false}>
                   <Eye className="mr-2 h-4 w-4" />
                   {t.productsPage.viewDetails}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={`/dashboard/products/${product.id}`}>
+                <Link href={`/dashboard/products/${product.id}`} prefetch={false}>
                   <Edit className="mr-2 h-4 w-4" />
                   {t.productsPage.edit}
                 </Link>
@@ -462,22 +561,12 @@ export default function ProductsPage() {
     getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     state: {
       rowSelection,
     },
     onRowSelectionChange: setRowSelection,
   });
-
-  useEffect(() => {
-    const filteredRows = table.getFilteredRowModel().rows;
-    const allSelected = filteredRows.length > 0 && filteredRows.every((row) => row.getIsSelected());
-    const someSelected = filteredRows.some((row) => row.getIsSelected());
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = !allSelected && someSelected;
-    }
-  }, [table, rowSelection]);
 
   const handleDelete = async (productId: string) => {
     if (!activeStoreId) {
@@ -486,6 +575,14 @@ export default function ProductsPage() {
     if (confirm(t.productsPage.deleteConfirm)) {
       try {
         await deleteProductMutation.mutateAsync({ storeId: activeStoreId, productId });
+        setRowSelection((current) => {
+          if (!current[productId]) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[productId];
+          return next;
+        });
       } catch (error) {
         if (isAxiosError(error) && error.response?.status === 404) {
           return;
@@ -565,8 +662,11 @@ export default function ProductsPage() {
             onClick={handleImportClick} 
             disabled={isImporting}
           >
-            <Upload className="mr-2 h-4 w-4" />
-            {t.productsPage.import}
+            {isImporting ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t.productsPage.importing}</>
+            ) : (
+              <><Upload className="mr-2 h-4 w-4" /> {t.productsPage.import}</>
+            )}
           </Button>
 
           {/* Add Product Button */}
@@ -605,7 +705,7 @@ export default function ProductsPage() {
 
       {/* Import Message */}
       {importMessage && (
-        <div className="rounded-md bg-green-50 p-4 text-sm text-green-800">
+        <div className={`rounded-md p-4 text-sm ${importErrors.length > 0 ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800'}`}>
           {importMessage}
           <button
             className="ml-2 font-semibold underline"
@@ -668,7 +768,7 @@ export default function ProductsPage() {
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center">
-              <div className="text-2xl font-bold">{products.length}</div>
+              <div className="text-2xl font-bold">{totalProducts}</div>
               <div className="ml-2 text-sm text-gray-600">{t.productsPage.statsTotal}</div>
             </div>
           </CardContent>
@@ -793,8 +893,25 @@ export default function ProductsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={!bulkStatus || table.getFilteredSelectedRowModel().rows.length === 0 || updateProductMutation.isPending}
+                  disabled={!bulkStatus || selectedProductIds.length === 0 || updateProductMutation.isPending}
                   onClick={handleBulkStatusUpdate}
+                >
+                  {t.productsPage.applySelected}
+                </Button>
+                <select
+                  value={bulkVisibility}
+                  onChange={(e) => setBulkVisibility(e.target.value)}
+                  className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                >
+                  <option value="">{t.productsPage.bulkVisibilityPlaceholder}</option>
+                  <option value="public">{t.productsPage.bulkSetPublic}</option>
+                  <option value="private">{t.productsPage.bulkSetPrivate}</option>
+                </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!bulkVisibility || selectedProductIds.length === 0 || updateProductMutation.isPending}
+                  onClick={handleBulkVisibilityUpdate}
                 >
                   {t.productsPage.applySelected}
                 </Button>
@@ -802,7 +919,7 @@ export default function ProductsPage() {
               <Button
                 variant="destructive"
                 size="sm"
-                disabled={table.getFilteredSelectedRowModel().rows.length === 0 || deleteProductMutation.isPending}
+                disabled={selectedProductIds.length === 0 || deleteProductMutation.isPending}
                 onClick={handleDeleteSelected}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
@@ -862,32 +979,20 @@ export default function ProductsPage() {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-end space-x-2 py-4">
-            <div className="flex-1 text-sm text-gray-700">
-              {interpolate(t.productsPage.selectedRows, {
-                selected: table.getFilteredSelectedRowModel().rows.length,
-                total: table.getFilteredRowModel().rows.length,
-              })}
-            </div>
-            <div className="space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-              >
-                {t.productsPage.previous}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-              >
-                {t.productsPage.next}
-              </Button>
-            </div>
-          </div>
+          <ListPagination
+            page={productsResponse?.page ?? currentPage}
+            pageCount={totalPages}
+            summary={`${interpolate(t.productsPage.selectedRows, {
+              selected: selectedProductIds.length,
+              total: totalProducts,
+            })} · ${t.customersPage.pageOf
+              .replace('{page}', String(productsResponse?.page ?? currentPage))
+              .replace('{total}', String(totalPages))}`}
+            previousLabel={t.productsPage.previous}
+            nextLabel={t.productsPage.next}
+            disabled={isLoading || isPending}
+            onPageChange={setCurrentPage}
+          />
         </CardContent>
       </Card>
 

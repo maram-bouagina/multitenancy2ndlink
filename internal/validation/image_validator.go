@@ -3,6 +3,7 @@ package validation
 import (
 	"fmt"
 	"net/url"
+	pathpkg "path"
 	"strings"
 )
 
@@ -54,11 +55,17 @@ func (v *ImageURLValidator) ValidateImageURL(urlStr string) error {
 		return fmt.Errorf("image URL must have a valid host")
 	}
 
-	// Vérifier l'extension du fichier
+	// Many CDN image URLs omit a file extension entirely.
 	path := strings.ToLower(parsedURL.Path)
+	ext := strings.ToLower(pathpkg.Ext(path))
+	if ext == "" {
+		return nil
+	}
+
+	// Vérifier l'extension du fichier quand elle existe
 	hasValidExtension := false
 	for ext := range ValidImageExtensions {
-		if strings.HasSuffix(path, ext) {
+		if ext == strings.ToLower(pathpkg.Ext(path)) {
 			hasValidExtension = true
 			break
 		}

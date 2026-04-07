@@ -27,6 +27,9 @@ import {
   AdminCustomer,
   AdminCustomerAddress,
   CustomerGroup,
+  CreatePageRequest,
+  StorefrontPage,
+  UpdatePageRequest,
 } from '@/lib/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -44,7 +47,10 @@ class ApiClient {
     return Object.fromEntries(cleanedEntries) as Partial<T>;
   }
 
+  private authToken: string | null = null;
+
   setAuthToken(token: string | null) {
+    this.authToken = token;
     if (token) {
       this.client.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     } else {
@@ -56,9 +62,6 @@ class ApiClient {
     this.client = axios.create({
       baseURL: API_BASE_URL,
       withCredentials: true,
-      headers: {
-        'Content-Type': 'application/json',
-      },
     });
 
     // Add response interceptor for error handling
@@ -117,18 +120,14 @@ class ApiClient {
   async uploadStoreLogo(storeId: string, file: File): Promise<Store> {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await this.client.post<Store>(`/api/stores/${storeId}/logo`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await this.client.post<Store>(`/api/stores/${storeId}/logo`, formData);
     return response.data;
   }
 
   async uploadStoreMedia(storeId: string, file: File): Promise<{ url: string }> {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await this.client.post<{ url: string }>(`/api/stores/${storeId}/media`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await this.client.post<{ url: string }>(`/api/stores/${storeId}/media`, formData);
     return response.data;
   }
 
@@ -315,11 +314,7 @@ class ApiClient {
     if (data.caption) formData.append('caption', data.caption);
     if (typeof data.position === 'number') formData.append('position', String(data.position));
 
-    const response = await this.client.post<ProductImage>(`/api/stores/${storeId}/products/${productId}/images`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const response = await this.client.post<ProductImage>(`/api/stores/${storeId}/products/${productId}/images`, formData);
     return response.data;
   }
 
@@ -351,9 +346,7 @@ class ApiClient {
     formData.append('file', file);
 
     const response = await this.client.post(`/api/stores/${storeId}/products/import`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
   }
@@ -378,11 +371,7 @@ class ApiClient {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await this.client.post(`/api/stores/${storeId}/categories/import`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const response = await this.client.post(`/api/stores/${storeId}/categories/import`, formData);
     return response.data;
   }
 
@@ -407,9 +396,7 @@ class ApiClient {
   async importTags(storeId: string, file: File): Promise<{ imported: number; updated: number; skipped: number; warnings?: string[]; errors?: string[] }> {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await this.client.post(`/api/stores/${storeId}/tags/import`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await this.client.post(`/api/stores/${storeId}/tags/import`, formData);
     return response.data;
   }
 
@@ -434,9 +421,7 @@ class ApiClient {
   async importCollections(storeId: string, file: File): Promise<{ imported: number; updated: number; skipped: number; warnings?: string[]; errors?: string[] }> {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await this.client.post(`/api/stores/${storeId}/collections/import`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await this.client.post(`/api/stores/${storeId}/collections/import`, formData);
     return response.data;
   }
 
@@ -505,9 +490,7 @@ class ApiClient {
   async importCustomers(storeId: string, file: File): Promise<{ imported: number; updated: number; skipped: number; warnings?: string[]; errors?: string[] }> {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await this.client.post(`/api/stores/${storeId}/customers/import`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await this.client.post(`/api/stores/${storeId}/customers/import`, formData);
     return response.data;
   }
 
@@ -564,9 +547,7 @@ class ApiClient {
   async importCustomerGroups(storeId: string, file: File): Promise<{ imported: number; updated: number; skipped: number; warnings?: string[]; errors?: string[] }> {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await this.client.post(`/api/stores/${storeId}/customer-groups/import`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await this.client.post(`/api/stores/${storeId}/customer-groups/import`, formData);
     return response.data;
   }
 
@@ -577,6 +558,37 @@ class ApiClient {
     });
     return response.data as Blob;
   }
+
+  // ── Storefront Pages ──────────────────────────────────────────────────────
+
+async getPages(storeId: string): Promise<StorefrontPage[]> {
+  const r = await this.client.get<StorefrontPage[]>(`/api/stores/${storeId}/pages`)
+  return r.data
+}
+
+async getPage(storeId: string, pageId: string): Promise<StorefrontPage> {
+  const r = await this.client.get<StorefrontPage>(`/api/stores/${storeId}/pages/${pageId}`)
+  return r.data
+}
+
+async createPage(storeId: string, data: CreatePageRequest): Promise<StorefrontPage> {
+  const r = await this.client.post<StorefrontPage>(`/api/stores/${storeId}/pages`, data)
+  return r.data
+}
+
+async updatePage(storeId: string, pageId: string, data: UpdatePageRequest): Promise<StorefrontPage> {
+  const r = await this.client.put<StorefrontPage>(`/api/stores/${storeId}/pages/${pageId}`, data)
+  return r.data
+}
+
+async publishPage(storeId: string, pageId: string): Promise<StorefrontPage> {
+  const r = await this.client.post<StorefrontPage>(`/api/stores/${storeId}/pages/${pageId}/publish`)
+  return r.data
+}
+
+async deletePage(storeId: string, pageId: string): Promise<void> {
+  await this.client.delete(`/api/stores/${storeId}/pages/${pageId}`)
+}
 }
 
 export const apiClient = new ApiClient();

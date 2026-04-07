@@ -20,6 +20,7 @@ import (
 	excelize "github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 
+	"multitenancypfe/internal/products/dto"
 	"multitenancypfe/internal/products/models"
 	"multitenancypfe/internal/products/repo"
 )
@@ -32,7 +33,10 @@ var productHeaders = []string{
 	"track_stock", "stock", "low_stock_threshold",
 	"weight", "dimensions", "brand", "tax_class",
 	"category_id", "category_slug", "category_name", "published_at", "image_url", "image_urls",
+	"meta_title", "meta_description", "canonical_url", "noindex",
 }
+
+const directRemoteImageImportSize int64 = 1024
 
 // ── ExportProductsCSV ─────────────────────────────────────────────────────────
 
@@ -189,6 +193,10 @@ func productToRow(p models.Product) []string {
 			row[22] = strings.Join(others, "|")
 		}
 	}
+	row[23] = strOrEmpty(p.MetaTitle)
+	row[24] = strOrEmpty(p.MetaDescription)
+	row[25] = strOrEmpty(p.CanonicalURL)
+	row[26] = strconv.FormatBool(p.Noindex)
 	return row
 }
 
@@ -286,6 +294,10 @@ func applyProductRows(
 		dims := get(row, "dimensions")
 		brand := get(row, "brand")
 		taxClass := get(row, "tax_class")
+		metaTitle := get(row, "meta_title")
+		metaDesc := get(row, "meta_description")
+		canonicalURL := get(row, "canonical_url")
+		noindexStr := get(row, "noindex")
 
 		var catID *uuid.UUID
 		if v := get(row, "category_id"); v != "" {
@@ -336,7 +348,7 @@ func applyProductRows(
 		if sku != "" {
 			skuExists, err := r.SKUExists(db, sku, storeID, nil)
 			if err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: db error: %s", lineNum, err))
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't read this product row. Please review the file and try again.", lineNum))
 				res.Skipped++
 				continue
 			}
@@ -375,6 +387,17 @@ func applyProductRows(
 		if taxClass != "" {
 			taxClassPtr = &taxClass
 		}
+		var metaTitlePtr, metaDescPtr, canonicalURLPtr *string
+		if metaTitle != "" {
+			metaTitlePtr = &metaTitle
+		}
+		if metaDesc != "" {
+			metaDescPtr = &metaDesc
+		}
+		if canonicalURL != "" {
+			canonicalURLPtr = &canonicalURL
+		}
+		noindex := strings.EqualFold(noindexStr, "true")
 
 		var targetProduct *models.Product
 
@@ -397,9 +420,13 @@ func applyProductRows(
 			existing.Brand = brandPtr
 			existing.TaxClass = taxClassPtr
 			existing.CategoryID = catID
+			existing.MetaTitle = metaTitlePtr
+			existing.MetaDescription = metaDescPtr
+			existing.CanonicalURL = canonicalURLPtr
+			existing.Noindex = noindex
 
 			if err := r.Update(db, existing); err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: update failed: %s", lineNum, err))
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't update this product. Please try again.", lineNum))
 				res.Skipped++
 				continue
 			}
@@ -425,6 +452,10 @@ func applyProductRows(
 				Brand:             brandPtr,
 				TaxClass:          taxClassPtr,
 				CategoryID:        catID,
+				MetaTitle:         metaTitlePtr,
+				MetaDescription:   metaDescPtr,
+				CanonicalURL:      canonicalURLPtr,
+				Noindex:           noindex,
 			}
 			if err := r.Create(db, p); err != nil {
 				// If slug/SKU conflict, try to find the existing product and update instead
@@ -447,6 +478,10 @@ func applyProductRows(
 						conflicting.Brand = brandPtr
 						conflicting.TaxClass = taxClassPtr
 						conflicting.CategoryID = catID
+						conflicting.MetaTitle = metaTitlePtr
+						conflicting.MetaDescription = metaDescPtr
+						conflicting.CanonicalURL = canonicalURLPtr
+						conflicting.Noindex = noindex
 						if updErr := r.Update(db, &conflicting); updErr != nil {
 							res.Errors = append(res.Errors, fmt.Sprintf("line %d: update-after-conflict failed: %s", lineNum, updErr))
 							res.Skipped++
@@ -455,12 +490,12 @@ func applyProductRows(
 						targetProduct = &conflicting
 						res.Updated++
 					} else {
-						res.Errors = append(res.Errors, fmt.Sprintf("line %d: create failed (duplicate): %s", lineNum, err))
+						res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't save this product. Please check for duplicate values and try again.", lineNum))
 						res.Skipped++
 						continue
 					}
 				} else {
-					res.Errors = append(res.Errors, fmt.Sprintf("line %d: create failed: %s", lineNum, err))
+					res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't save this product. Please check for duplicate values and try again.", lineNum))
 					res.Skipped++
 					continue
 				}
@@ -611,20 +646,42 @@ func importProductImages(
 	maxImageSizeMB int64,
 ) []string {
 	imageSvc := NewProductImageService(repo.NewProductImageRepository(db))
+	existingURLs, nextPosition := loadExistingProductImageURLs(imageSvc, storeID, product.ID)
 
 	warnings := make([]string, 0)
 	for index, imageURL := range imageURLs {
-		imageBytes, filename, contentType, err := downloadRemoteImage(imageURL, maxImageSizeMB)
-		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("image %d could not be downloaded: %s", index+1, err))
+		if _, exists := existingURLs[imageURL]; exists {
 			continue
 		}
 
-		position := index
+		position := nextPosition
 		altText := strings.TrimSpace(defaultAltText)
 		var altTextPtr *string
 		if altText != "" {
 			altTextPtr = &altText
+		}
+
+		if fileType, fileSize, err := inspectRemoteImage(imageURL, maxImageSizeMB); err == nil {
+			if _, err := imageSvc.Create(storeID, product.ID, dto.CreateProductImageRequest{
+				URL:          imageURL,
+				URLThumbnail: imageURL,
+				URLMedium:    imageURL,
+				URLLarge:     imageURL,
+				AltText:      altTextPtr,
+				Position:     position,
+				FileSize:     fileSize,
+				FileType:     fileType,
+			}); err == nil {
+				existingURLs[imageURL] = struct{}{}
+				nextPosition++
+				continue
+			}
+		}
+
+		imageBytes, filename, contentType, err := downloadRemoteImage(imageURL, maxImageSizeMB)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("image %d could not be downloaded: %s", index+1, err))
+			continue
 		}
 
 		if _, err := imageUploadSvc.CreateFromBytes(ctx, imageSvc, storeID, product.ID, ProductImageUploadInput{
@@ -635,10 +692,84 @@ func importProductImages(
 			Position:    &position,
 		}); err != nil {
 			warnings = append(warnings, fmt.Sprintf("image %d could not be imported: %s", index+1, err))
+			continue
 		}
+
+		existingURLs[imageURL] = struct{}{}
+		nextPosition++
 	}
 
 	return warnings
+}
+
+func loadExistingProductImageURLs(
+	imageSvc ProductImageService,
+	storeID uuid.UUID,
+	productID uuid.UUID,
+) (map[string]struct{}, int) {
+	existingURLs := make(map[string]struct{})
+	images, err := imageSvc.GetByProductID(storeID, productID)
+	if err != nil || images == nil {
+		return existingURLs, 0
+	}
+
+	for _, image := range *images {
+		if trimmed := strings.TrimSpace(image.URL); trimmed != "" {
+			existingURLs[trimmed] = struct{}{}
+		}
+	}
+
+	return existingURLs, len(*images)
+}
+
+func inspectRemoteImage(rawURL string, maxImageSizeMB int64) (string, int64, error) {
+	parsedURL, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return "", 0, fmt.Errorf("skipped (not a full URL)")
+	}
+
+	host := strings.Split(parsedURL.Hostname(), ":")[0]
+	if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" || host == "::1" {
+		return "", 0, fmt.Errorf("skipped local image URL")
+	}
+
+	req, err := http.NewRequest(http.MethodHead, parsedURL.String(), nil)
+	if err != nil {
+		return "", 0, err
+	}
+
+	client := &http.Client{Timeout: 4 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", 0, fmt.Errorf("remote server returned %s", resp.Status)
+	}
+
+	contentType := strings.ToLower(strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0]))
+	if contentType != "image/jpeg" && contentType != "image/png" && contentType != "image/webp" {
+		return "", 0, fmt.Errorf("unsupported content type %q", contentType)
+	}
+
+	limitBytes := maxImageSizeMB * 1024 * 1024
+	fileSize := directRemoteImageImportSize
+	if rawSize := strings.TrimSpace(resp.Header.Get("Content-Length")); rawSize != "" {
+		parsedSize, err := strconv.ParseInt(rawSize, 10, 64)
+		if err != nil {
+			return "", 0, fmt.Errorf("invalid content length")
+		}
+		if parsedSize > limitBytes {
+			return "", 0, fmt.Errorf("remote image exceeds %dMB", maxImageSizeMB)
+		}
+		if parsedSize > 0 {
+			fileSize = parsedSize
+		}
+	}
+
+	return contentType, fileSize, nil
 }
 
 // extractXLSXEmbeddedImages scans each data row for pictures anchored in the
@@ -756,10 +887,16 @@ func prefixLineWarnings(lineNum int, warnings []string) []string {
 func downloadRemoteImage(rawURL string, maxImageSizeMB int64) ([]byte, string, string, error) {
 	parsedURL, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
-		return nil, "", "", fmt.Errorf("invalid image URL")
+		return nil, "", "", fmt.Errorf("skipped (not a full URL)")
 	}
 
-	client := &http.Client{Timeout: 20 * time.Second}
+	// Skip localhost / loopback URLs — unreachable from inside Docker.
+	host := strings.Split(parsedURL.Hostname(), ":")[0]
+	if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" || host == "::1" {
+		return nil, "", "", fmt.Errorf("skipped local image URL")
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(parsedURL.String())
 	if err != nil {
 		return nil, "", "", err

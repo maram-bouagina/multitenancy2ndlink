@@ -306,6 +306,12 @@ export default function StoreEditPage() {
           <Button size="sm" asChild>
             <Link href={`/dashboard/stores/${id}/editor`}>Store Builder</Link>
           </Button>
+          <Link href={`/dashboard/stores/${id}/pages`}>
+            <Button variant="outline" size="sm">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 19.5A2.5 2.5 0 006.5 22h11a2.5 2.5 0 002.5-2.5v-15A2.5 2.5 0 0017.5 2h-11A2.5 2.5 0 004 4.5v15z" /><path strokeLinecap="round" strokeLinejoin="round" d="M8 6h8M8 10h8M8 14h6" /></svg>
+              Gérer les pages
+            </Button>
+          </Link>
         </div>
       </div>
 

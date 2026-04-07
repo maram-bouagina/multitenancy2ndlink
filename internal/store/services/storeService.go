@@ -2,13 +2,11 @@ package services
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	authRepo "multitenancypfe/internal/auth/repo"
-	"multitenancypfe/internal/plans"
 	"multitenancypfe/internal/store/dto"
 	"multitenancypfe/internal/store/models"
 	"multitenancypfe/internal/store/repo"
@@ -28,12 +26,13 @@ type StoreService interface {
 type storeService struct {
 	repo       repo.StoreRepository
 	tenantRepo authRepo.TenantRepository
+	pageRepo   repo.PageRepository
 }
 
-func NewStoreService(r repo.StoreRepository, tr authRepo.TenantRepository) StoreService {
-	return &storeService{repo: r, tenantRepo: tr}
-
+func NewStoreService(r repo.StoreRepository, tr authRepo.TenantRepository, pr repo.PageRepository) StoreService {
+	return &storeService{repo: r, tenantRepo: tr, pageRepo: pr}
 }
+
 func (s *storeService) Create(db *gorm.DB, tenantID string, req dto.CreateStoreRequest) (*dto.StoreResponse, error) {
 	// check slug uniqueness
 	existing, err := s.repo.FindBySlug(db, req.Slug)
@@ -44,23 +43,24 @@ func (s *storeService) Create(db *gorm.DB, tenantID string, req dto.CreateStoreR
 		return nil, errors.New("slug already in use")
 	}
 
+	// TODO: re-enable once upgrade flow is implemented
 	// fetch tenant plan and enforce store limit
-	plan, err := s.tenantRepo.FindPlan(tenantID)
-	if err != nil {
-		return nil, err
-	}
-	limits := plans.Get(plan)
+	// plan, err := s.tenantRepo.FindPlan(tenantID)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// limits := plans.Get(plan)
 
-	existingStores, err := s.repo.FindByTenantID(db, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	if !limits.CanCreateStore(len(existingStores)) {
-		return nil, fmt.Errorf(
-			"your %s plan allows a maximum of %d store(s). Upgrade your plan to create more.",
-			plan, limits.MaxStores,
-		)
-	}
+	// existingStores, err := s.repo.FindByTenantID(db, tenantID)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// if !limits.CanCreateStore(len(existingStores)) {
+	// 	return nil, fmt.Errorf(
+	// 		"your %s plan allows a maximum of %d store(s). Upgrade your plan to create more.",
+	// 		plan, limits.MaxStores,
+	// 	)
+	// }
 
 	store := &models.Store{
 		TenantID:                  tenantID,
@@ -103,6 +103,7 @@ func (s *storeService) Create(db *gorm.DB, tenantID string, req dto.CreateStoreR
 	if err := s.repo.Create(db, store); err != nil {
 		return nil, err
 	}
+	s.seedDefaultPages(db, store.ID)
 	// Register slug in the public routing index (best-effort; non-blocking)
 	_ = sfRepo.UpsertSlug(store.Slug, store.TenantID, store.ID, store.Status)
 	return toStoreResponse(store), nil
@@ -280,5 +281,29 @@ func toStoreResponse(s *models.Store) *dto.StoreResponse {
 		TaxNumber:                 s.TaxNumber,
 		MaintenanceMessage:        s.MaintenanceMessage,
 		Status:                    s.Status,
+	}
+}
+func (s *storeService) seedDefaultPages(db *gorm.DB, storeID uuid.UUID) {
+	defaults := []struct {
+		typ, title, slug, layout string
+	}{
+		{"home", "Accueil", "index", models.DefaultHomeLayout},
+		{"promo", "Promotions", "promotions", models.DefaultPromoLayout},
+		{"blog", "Blog", "blog", models.DefaultBlogLayout},
+		{"info", "À propos", "a-propos", models.DefaultAboutLayout},
+		{"info", "Contact", "contact", models.DefaultContactLayout},
+		{"info", "Mentions légales", "mentions-legales", models.DefaultLegalLayout},
+	}
+	for _, d := range defaults {
+		page := &models.StorefrontPage{
+			StoreID:         storeID,
+			Type:            d.typ,
+			Title:           d.title,
+			Slug:            d.slug,
+			LayoutDraft:     d.layout,
+			LayoutPublished: d.layout,
+			Status:          "published",
+		}
+		_ = s.pageRepo.Create(db, page) // best-effort, non-blocking
 	}
 }

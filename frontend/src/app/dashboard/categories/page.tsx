@@ -17,14 +17,27 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Edit, Trash2, Download, Upload, Search } from 'lucide-react';
+import { Edit, Eye, Trash2, Download, Upload, Search } from 'lucide-react';
 import { useLanguage } from '@/lib/hooks/use-language';
+import type { Category } from '@/lib/types';
 
 function interpolate(template: string, values: Record<string, string | number>) {
   return Object.entries(values).reduce(
     (text, [key, value]) => text.replace(`{${key}}`, String(value)),
     template
   );
+}
+
+type FlattenedCategory = Category & {
+  depth: number;
+  parentName?: string;
+};
+
+function flattenCategories(categories: Category[], depth = 0, parentName?: string): FlattenedCategory[] {
+  return categories.flatMap((category) => [
+    { ...category, depth, parentName },
+    ...flattenCategories(category.children ?? [], depth + 1, category.name),
+  ]);
 }
 
 export default function CategoriesPage() {
@@ -40,23 +53,49 @@ export default function CategoriesPage() {
   const [importMessage, setImportMessage] = useState('');
   const [deleteMessage, setDeleteMessage] = useState('');
   const [bulkVisibility, setBulkVisibility] = useState('');
+  const [visibilityFilter, setVisibilityFilter] = useState('');
+  const [structureFilter, setStructureFilter] = useState('');
+  const [imageFilter, setImageFilter] = useState('');
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { data: categories, isLoading, refetch } = useCategories(storeId);
   const deleteCategoryMutation = useDeleteCategory();
   const updateCategoryMutation = useUpdateCategory();
-  const allCategories = categories ?? [];
+  const allCategories = flattenCategories(categories ?? []);
   const filteredCategories = allCategories.filter((category) => {
     const query = search.trim().toLowerCase();
-    if (!query) return true;
-    return category.name.toLowerCase().includes(query) || category.slug.toLowerCase().includes(query);
+    const searchHaystack = [
+      category.name,
+      category.slug,
+      category.description,
+      category.meta_title,
+      category.meta_description,
+      category.canonical_url,
+      category.image_url,
+      category.parentName,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    const matchesSearch = !query || searchHaystack.includes(query);
+    const matchesVisibility = !visibilityFilter || category.visibility === visibilityFilter;
+    const matchesStructure = !structureFilter
+      || (structureFilter === 'top-level' && !category.parent_id)
+      || (structureFilter === 'child' && !!category.parent_id)
+      || (structureFilter === 'with-children' && (category.children?.length ?? 0) > 0);
+    const matchesImage = !imageFilter
+      || (imageFilter === 'with-image' && !!category.image_url)
+      || (imageFilter === 'without-image' && !category.image_url);
+
+    return matchesSearch && matchesVisibility && matchesStructure && matchesImage;
   });
   const pageCount = Math.max(1, Math.ceil(filteredCategories.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const paginatedCategories = filteredCategories.slice(pageStart, pageStart + PAGE_SIZE);
-  const currentPageIds = paginatedCategories.map((category) => category.id);
+  const filteredCategoryIds = filteredCategories.map((category) => category.id);
   const validSelectedCategoryIds = selectedCategoryIds.filter((id) => allCategories.some((category) => category.id === id));
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -144,20 +183,20 @@ export default function CategoriesPage() {
 
   const toggleCategorySelection = (categoryId: string, checked: boolean) => {
     setSelectedCategoryIds((prev) =>
-      checked ? [...prev, categoryId] : prev.filter((id) => id !== categoryId)
+      checked ? Array.from(new Set([...prev, categoryId])) : prev.filter((id) => id !== categoryId)
     );
   };
 
   const toggleSelectAll = (checked: boolean) => {
-    if (!currentPageIds.length) {
+    if (!filteredCategoryIds.length) {
       return;
     }
 
     setSelectedCategoryIds((prev) => {
       if (checked) {
-        return Array.from(new Set([...prev, ...currentPageIds]));
+        return Array.from(new Set([...prev, ...filteredCategoryIds]));
       }
-      return prev.filter((id) => !currentPageIds.includes(id));
+      return prev.filter((id) => !filteredCategoryIds.includes(id));
     });
   };
 
@@ -351,17 +390,56 @@ export default function CategoriesPage() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
-            <div className="relative w-full max-w-sm">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                value={search}
+            <div className="flex w-full flex-col gap-3 md:max-w-4xl md:flex-row">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Input
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(1);
+                  }}
+                  className="pl-9"
+                  placeholder={t.categoriesPage.searchPlaceholder}
+                />
+              </div>
+              <select
+                value={visibilityFilter}
                 onChange={(event) => {
-                  setSearch(event.target.value);
+                  setVisibilityFilter(event.target.value);
                   setPage(1);
                 }}
-                className="pl-9"
-                placeholder={t.categoriesPage.searchPlaceholder}
-              />
+                className="flex h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              >
+                <option value="">{t.categoriesPage.allVisibility}</option>
+                <option value="public">{t.categoriesPage.bulkSetPublic}</option>
+                <option value="private">{t.categoriesPage.bulkSetPrivate}</option>
+              </select>
+              <select
+                value={structureFilter}
+                onChange={(event) => {
+                  setStructureFilter(event.target.value);
+                  setPage(1);
+                }}
+                className="flex h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              >
+                <option value="">{t.categoriesPage.allStructures}</option>
+                <option value="top-level">{t.categoriesPage.topLevelOnly}</option>
+                <option value="child">{t.categoriesPage.childOnly}</option>
+                <option value="with-children">{t.categoriesPage.withChildrenOnly}</option>
+              </select>
+              <select
+                value={imageFilter}
+                onChange={(event) => {
+                  setImageFilter(event.target.value);
+                  setPage(1);
+                }}
+                className="flex h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              >
+                <option value="">{t.categoriesPage.allImageStates}</option>
+                <option value="with-image">{t.categoriesPage.withImageOnly}</option>
+                <option value="without-image">{t.categoriesPage.withoutImageOnly}</option>
+              </select>
             </div>
             <div className="flex items-center gap-2">
               <select
@@ -400,7 +478,7 @@ export default function CategoriesPage() {
                   <TableHead className="w-10">
                     <input
                       type="checkbox"
-                      checked={currentPageIds.length > 0 && currentPageIds.every((id) => validSelectedCategoryIds.includes(id))}
+                      checked={filteredCategoryIds.length > 0 && filteredCategoryIds.every((id) => validSelectedCategoryIds.includes(id))}
                       onChange={(e) => toggleSelectAll(e.target.checked)}
                       aria-label="Select all categories"
                     />
@@ -426,7 +504,13 @@ export default function CategoriesPage() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" asChild>
-                          <Link href={`/dashboard/categories/${category.id}`}>
+                          <Link href={`/dashboard/categories/${category.id}/details`} prefetch={false}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            {t.categoriesPage.view}
+                          </Link>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/dashboard/categories/${category.id}`} prefetch={false}>
                             <Edit className="mr-2 h-4 w-4" />
                             {t.categoriesPage.edit}
                           </Link>

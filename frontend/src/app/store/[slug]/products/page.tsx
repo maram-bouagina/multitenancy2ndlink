@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Tag, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Tag } from 'lucide-react';
+import { StorePagination } from '@/components/storefront/store-pagination';
 import { getProducts, getCategories } from '@/lib/api/storefront-client';
 import { StorefrontProductsSidebar, StorefrontProductsToolbar } from '@/components/storefront/products-filters';
 import { resolveMediaUrl } from '@/lib/api/media-url';
@@ -220,40 +221,14 @@ export default async function ProductsPage({
                 ))}
               </div>
 
-              {result.pages > 1 ? (
-                <div className="mt-10 flex items-center justify-center gap-2">
-                  <Link
-                    href={buildPageHref(slug, filters, Math.max(1, page - 1))}
-                    aria-disabled={page === 1}
-                    className={`p-2 rounded-lg border ${page === 1 ? 'pointer-events-none opacity-40' : ''}`}
-                    style={{ borderColor: 'var(--sf-border)', color: 'var(--sf-text-primary)', backgroundColor: 'var(--sf-surface)' }}
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </Link>
-
-                  {Array.from({ length: result.pages }, (_, i) => i + 1)
-                    .filter((p) => Math.abs(p - page) <= 2)
-                    .map((p) => (
-                      <Link
-                        key={p}
-                        href={buildPageHref(slug, filters, p)}
-                        className="w-9 h-9 rounded-lg border text-sm font-medium transition-colors"
-                        style={p === page ? { borderColor: 'var(--sf-primary)', backgroundColor: 'var(--sf-primary)', color: '#fff' } : { borderColor: 'var(--sf-border)', color: 'var(--sf-text-secondary)', backgroundColor: 'var(--sf-surface)' }}
-                      >
-                        {p}
-                      </Link>
-                    ))}
-
-                  <Link
-                    href={buildPageHref(slug, filters, Math.min(result.pages, page + 1))}
-                    aria-disabled={page === result.pages}
-                    className={`p-2 rounded-lg border ${page === result.pages ? 'pointer-events-none opacity-40' : ''}`}
-                    style={{ borderColor: 'var(--sf-border)', color: 'var(--sf-text-primary)', backgroundColor: 'var(--sf-surface)' }}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </Link>
-                </div>
-              ) : null}
+              <StorePagination
+                page={page}
+                pageCount={result.pages}
+                summary={`Page ${page} sur ${result.pages}`}
+                buildHref={(nextPage) => buildPageHref(slug, filters, nextPage)}
+                previousLabel="Précédent"
+                nextLabel="Suivant"
+              />
             </>
           )}
         </div>

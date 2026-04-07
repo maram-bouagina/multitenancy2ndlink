@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ChevronRight, Tag } from 'lucide-react';
+import { StorePagination } from '@/components/storefront/store-pagination';
 import { getCollectionProducts } from '@/lib/api/storefront-client';
 import { resolveMediaUrl } from '@/lib/api/media-url';
 import type { ProductPublic } from '@/lib/types/storefront';
@@ -24,9 +25,12 @@ export async function generateMetadata({
 
   try {
     const data = await getCollectionProducts(slug, collectionSlug, 1, 1);
+    const col = data.collection;
     return {
-      title: data.collection.name,
-      description: `Découvrez les produits de la collection ${data.collection.name}.`,
+      title: col.meta_title || col.name,
+      description: col.meta_description || col.description || `Découvrez les produits de la collection ${col.name}.`,
+      ...(col.canonical_url ? { alternates: { canonical: col.canonical_url } } : {}),
+      ...(col.noindex ? { robots: { index: false, follow: true } } : {}),
     };
   } catch {
     return {
@@ -117,9 +121,30 @@ export default async function CollectionPage({
   if (!data) notFound();
 
   const { collection, products } = data;
+  const buildPageHref = (nextPage: number) =>
+    nextPage > 1
+      ? `/store/${slug}/collections/${collectionSlug}?page=${nextPage}`
+      : `/store/${slug}/collections/${collectionSlug}`;
+
+  /* ── JSON-LD BreadcrumbList ──────────────────────────────────────── */
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || '';
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Accueil', item: `${baseUrl}/store/${slug}` },
+      { '@type': 'ListItem', position: 2, name: 'Produits', item: `${baseUrl}/store/${slug}/products` },
+      { '@type': 'ListItem', position: 3, name: collection.name, item: `${baseUrl}/store/${slug}/collections/${collection.slug}` },
+    ],
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      {/* JSON-LD */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm mb-8" style={{ color: 'var(--sf-text-muted)' }}>
         <Link href={`/store/${slug}`}>Accueil</Link>
@@ -130,12 +155,46 @@ export default async function CollectionPage({
       </nav>
 
       {/* Header */}
-      <div className="mb-10">
-        <p className="text-xs uppercase tracking-widest mb-1" style={{ color: 'var(--sf-text-muted)' }}>Collection</p>
-        <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--sf-text-primary)' }}>{collection.name}</h1>
-        <p className="text-sm" style={{ color: 'var(--sf-text-muted)' }}>
-          {products.total} produit{products.total !== 1 ? 's' : ''}
-        </p>
+      <div className="mb-10 grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+        <div>
+          <p className="text-xs uppercase tracking-widest mb-1" style={{ color: 'var(--sf-text-muted)' }}>Collection</p>
+          <h1 className="text-3xl font-bold mb-3" style={{ color: 'var(--sf-text-primary)' }}>{collection.name}</h1>
+          {collection.description && (
+            <p className="max-w-2xl leading-7" style={{ color: 'var(--sf-text-secondary)' }}>{collection.description}</p>
+          )}
+          <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
+            <span className="rounded-full px-4 py-2 font-medium" style={{ backgroundColor: 'var(--sf-surface-alt)', color: 'var(--sf-text-secondary)' }}>
+              {products.total} produit{products.total !== 1 ? 's' : ''}
+            </span>
+            <span className="rounded-full px-4 py-2 font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--sf-primary) 10%, transparent)', color: 'var(--sf-primary)' }}>
+              Sélection éditoriale
+            </span>
+          </div>
+        </div>
+
+        <div className="relative aspect-4/3 overflow-hidden rounded-[2rem] border" style={{ borderColor: 'var(--sf-border)', backgroundColor: 'var(--sf-surface-alt)' }}>
+          {collection.image_url ? (
+            <Image
+              src={resolveMediaUrl(collection.image_url)}
+              alt={collection.name}
+              fill
+              className="object-cover"
+              unoptimized
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center" style={{ color: 'var(--sf-text-muted)' }}>
+              <Tag className="h-12 w-12" />
+            </div>
+          )}
+          <div
+            className="absolute inset-0"
+            style={{ background: 'linear-gradient(180deg, transparent 30%, color-mix(in srgb, var(--sf-surface) 78%, black)) 100%)' }}
+          />
+          <div className="absolute bottom-0 left-0 right-0 p-6">
+            <p className="text-xs uppercase tracking-[0.2em]" style={{ color: 'rgba(255,255,255,0.72)' }}>Sélection</p>
+            <p className="mt-2 text-lg font-semibold text-white">Une vitrine éditoriale pour vos meilleurs produits</p>
+          </div>
+        </div>
       </div>
 
       {/* Products */}
@@ -159,32 +218,14 @@ export default async function CollectionPage({
             ))}
           </div>
 
-          {/* Pagination */}
-          {products.pages > 1 && (
-            <div className="mt-10 flex items-center justify-center gap-2">
-              {page > 1 && (
-                <Link
-                  href={`/store/${slug}/collections/${collectionSlug}?page=${page - 1}`}
-                  className="px-4 py-2 rounded-lg border text-sm"
-                  style={{ borderColor: 'var(--sf-border)', backgroundColor: 'var(--sf-surface)', color: 'var(--sf-text-secondary)' }}
-                >
-                  ← Précédent
-                </Link>
-              )}
-              <span className="text-sm" style={{ color: 'var(--sf-text-secondary)' }}>
-                Page {page} / {products.pages}
-              </span>
-              {page < products.pages && (
-                <Link
-                  href={`/store/${slug}/collections/${collectionSlug}?page=${page + 1}`}
-                  className="px-4 py-2 rounded-lg border text-sm"
-                  style={{ borderColor: 'var(--sf-border)', backgroundColor: 'var(--sf-surface)', color: 'var(--sf-text-secondary)' }}
-                >
-                  Suivant →
-                </Link>
-              )}
-            </div>
-          )}
+          <StorePagination
+            page={page}
+            pageCount={products.pages}
+            summary={`Page ${page} sur ${products.pages}`}
+            buildHref={buildPageHref}
+            previousLabel="Précédent"
+            nextLabel="Suivant"
+          />
         </>
       )}
     </div>

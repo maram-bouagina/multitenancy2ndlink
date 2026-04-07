@@ -1,4 +1,4 @@
-import { getStore, getCategories, getProducts, getCollections } from '@/lib/api/storefront-client';
+import { getStore, getCategories, getProducts, getCollections, getStorePages } from '@/lib/api/storefront-client';
 import { PuckStorefrontRenderer } from './puck-renderer';
 import type { Metadata } from 'next';
 
@@ -32,11 +32,12 @@ export default async function StorePage({
 }) {
   const { slug } = await params;
 
-  const [store, categories, collections, { products }] = await Promise.all([
+  const [store, categories, collections, { products }, pages] = await Promise.all([
     getStore(slug),
     getCategories(slug),
     getCollections(slug),
     getProducts(slug, { limit: 24, sort: 'newest' }),
+    getStorePages(slug).catch(() => []),
   ]);
 
   return (
@@ -45,6 +46,7 @@ export default async function StorePage({
       products={products}
       categories={categories}
       collections={collections}
+      pages={pages}
     />
   );
 }

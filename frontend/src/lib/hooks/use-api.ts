@@ -13,6 +13,8 @@ import {
   CreateCollectionRequest,
   ProductFilters,
   ProductRelation,
+  CreatePageRequest,
+  UpdatePageRequest,
 } from '@/lib/types';
 
 // Auth hooks
@@ -321,6 +323,12 @@ export function useDeleteCollection() {
       apiClient.deleteCollection(storeId, collectionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['collections'] });
+    },
+    onError: (error: any) => {
+      // If 404, the collection doesn't exist in the DB (stale cache) — just refresh the list
+      if (error?.response?.status === 404) {
+        queryClient.invalidateQueries({ queryKey: ['collections'] });
+      }
     },
   });
 }
@@ -732,4 +740,64 @@ export function useFindDuplicates() {
     mutationFn: ({ storeId }: { storeId: string }) =>
       apiClient.findDuplicates(storeId),
   });
+}
+
+// ── Pages ──────────────────────────────────────────────────────────────────
+
+export function usePages(storeId: string) {
+  return useQuery({
+    queryKey: ['pages', storeId],
+    queryFn: () => apiClient.getPages(storeId),
+    enabled: !!storeId,
+  })
+}
+
+export function usePage(storeId: string, pageId: string) {
+  return useQuery({
+    queryKey: ['pages', storeId, pageId],
+    queryFn: () => apiClient.getPage(storeId, pageId),
+    enabled: !!storeId && !!pageId,
+  })
+}
+
+export function useCreatePage() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ storeId, data }: { storeId: string; data: CreatePageRequest }) =>
+      apiClient.createPage(storeId, data),
+    onSuccess: (_, { storeId }) => qc.invalidateQueries({ queryKey: ['pages', storeId] }),
+  })
+}
+
+export function useUpdatePage() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ storeId, pageId, data }: { storeId: string; pageId: string; data: UpdatePageRequest }) =>
+      apiClient.updatePage(storeId, pageId, data),
+    onSuccess: (_, { storeId, pageId }) => {
+      qc.invalidateQueries({ queryKey: ['pages', storeId] })
+      qc.invalidateQueries({ queryKey: ['pages', storeId, pageId] })
+    },
+  })
+}
+
+export function usePublishPage() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ storeId, pageId }: { storeId: string; pageId: string }) =>
+      apiClient.publishPage(storeId, pageId),
+    onSuccess: (_, { storeId, pageId }) => {
+      qc.invalidateQueries({ queryKey: ['pages', storeId] })
+      qc.invalidateQueries({ queryKey: ['pages', storeId, pageId] })
+    },
+  })
+}
+
+export function useDeletePage() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ storeId, pageId }: { storeId: string; pageId: string }) =>
+      apiClient.deletePage(storeId, pageId),
+    onSuccess: (_, { storeId }) => qc.invalidateQueries({ queryKey: ['pages', storeId] }),
+  })
 }

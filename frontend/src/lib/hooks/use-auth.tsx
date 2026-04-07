@@ -37,11 +37,23 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const STORE_KEY = 'currentStoreId';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
-  const [currentStore, setCurrentStore] = useState<Store | null>(null);
+  const [currentStore, _setCurrentStore] = useState<Store | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
   const [storesLoaded, setStoresLoaded] = useState(false);
+
+  // Wrap setCurrentStore to also persist to localStorage
+  const setCurrentStore = useCallback((store: Store | null) => {
+    if (store) {
+      localStorage.setItem(STORE_KEY, store.id);
+    } else {
+      localStorage.removeItem(STORE_KEY);
+    }
+    _setCurrentStore(store);
+  }, []);
 
   const sessionToken = (session as { session?: { token?: string } } | null)?.session?.token ?? null;
   const user = session?.user as AuthUser | null ?? null;
@@ -56,15 +68,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userStores = await apiClient.getStores();
       setStores(userStores);
-      setCurrentStore((prev) => {
-        if (userStores.length === 0) return null;
+      if (userStores.length === 0) {
+        _setCurrentStore(null);
+        return;
+      }
+      // Restore previously selected store from localStorage
+      const savedId = localStorage.getItem(STORE_KEY);
+      const saved = savedId ? userStores.find((s) => s.id === savedId) : null;
+      _setCurrentStore((prev) => {
         if (prev) {
-          const matchingStore = userStores.find((store) => store.id === prev.id);
+          const matchingStore = userStores.find((s) => s.id === prev.id);
           if (matchingStore) return matchingStore;
         }
-        return userStores[0];
+        return saved ?? userStores[0];
       });
-    }  catch (error: any) {
+    } catch (error: any) {
     if (error?.response?.status === 401) return; 
     console.error('Failed to load stores:', error);
   } finally {

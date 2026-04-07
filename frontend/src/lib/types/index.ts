@@ -73,6 +73,10 @@ export interface Product {
   dimensions?: string;
   brand?: string;
   tax_class?: string;
+  meta_title?: string;
+  meta_description?: string;
+  canonical_url?: string;
+  noindex?: boolean;
   category_id?: string;
   published_at?: string;
   created_at: string;
@@ -104,6 +108,11 @@ export interface Category {
   name: string;
   slug: string;
   description?: string;
+  meta_title?: string;
+  meta_description?: string;
+  canonical_url?: string;
+  noindex?: boolean;
+  image_url?: string;
   visibility: 'public' | 'private';
   parent_id?: string;
   created_at: string;
@@ -118,6 +127,12 @@ export interface Collection {
   slug: string;
   type: 'manual' | 'automatic';
   rule?: string;
+  description?: string;
+  meta_title?: string;
+  meta_description?: string;
+  canonical_url?: string;
+  noindex?: boolean;
+  image_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -375,4 +390,35 @@ export interface CustomerGroup {
   discount: number;
   member_count: number;
   created_at: string;
+}
+
+export type PageType = 'home' | 'promo' | 'blog' | 'info'
+
+export interface StorefrontPage {
+  id: string
+  store_id: string
+  type: PageType
+  title: string
+  slug: string
+  layout_draft: string
+  layout_published: string
+  status: 'draft' | 'published'
+  meta_title?: string
+  meta_description?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CreatePageRequest {
+  type: PageType
+  title: string
+  slug: string
+}
+
+export interface UpdatePageRequest {
+  title?: string
+  layout_draft?: string
+  status?: 'draft' | 'published'
+  meta_title?: string
+  meta_description?: string
 }

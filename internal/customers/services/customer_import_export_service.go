@@ -256,7 +256,7 @@ func applyCustomerRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*Import
 		var customer models.Customer
 		err = db.Where("store_id = ? AND email = ?", storeID, email).First(&customer).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			result.Errors = append(result.Errors, fmt.Sprintf("line %d: query failed: %s", lineNum, err))
+			result.Errors = append(result.Errors, fmt.Sprintf("line %d: we couldn't read this customer. Please try again.", lineNum))
 			result.Skipped++
 			continue
 		}
@@ -278,7 +278,7 @@ func applyCustomerRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*Import
 				AcceptsMarketing: acceptsMarketing,
 			}
 			if err := db.Create(&customer).Error; err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("line %d: create failed: %s", lineNum, err))
+				result.Errors = append(result.Errors, fmt.Sprintf("line %d: we couldn't save this customer. Please check the file and try again.", lineNum))
 				result.Skipped++
 				continue
 			}
@@ -293,7 +293,7 @@ func applyCustomerRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*Import
 		customer.EmailVerified = emailVerified
 		customer.AcceptsMarketing = acceptsMarketing
 		if err := db.Save(&customer).Error; err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("line %d: update failed: %s", lineNum, err))
+			result.Errors = append(result.Errors, fmt.Sprintf("line %d: we couldn't update this customer. Please try again.", lineNum))
 			result.Skipped++
 			continue
 		}
@@ -372,7 +372,7 @@ func applyCustomerGroupRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*I
 
 		group, err := findCustomerGroupForImport(db, storeID, get(row, "id"), name)
 		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("line %d: query failed: %s", lineNum, err))
+			result.Errors = append(result.Errors, fmt.Sprintf("line %d: we couldn't read this customer group. Please try again.", lineNum))
 			result.Skipped++
 			continue
 		}
@@ -389,14 +389,14 @@ func applyCustomerGroupRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*I
 
 		if created {
 			if err := db.Create(group).Error; err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("line %d: create failed: %s", lineNum, err))
+				result.Errors = append(result.Errors, fmt.Sprintf("line %d: we couldn't save this customer group. Please try again.", lineNum))
 				result.Skipped++
 				continue
 			}
 			result.Imported++
 		} else {
 			if err := db.Save(group).Error; err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("line %d: update failed: %s", lineNum, err))
+				result.Errors = append(result.Errors, fmt.Sprintf("line %d: we couldn't update this customer group. Please try again.", lineNum))
 				result.Skipped++
 				continue
 			}
@@ -406,7 +406,7 @@ func applyCustomerGroupRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*I
 		if _, ok := idx["member_emails"]; ok {
 			warnings, err := syncCustomerGroupMembers(db, storeID, group.ID, get(row, "member_emails"))
 			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("line %d: syncing members failed: %s", lineNum, err))
+				result.Errors = append(result.Errors, fmt.Sprintf("line %d: we couldn't update the group members. Please try again.", lineNum))
 				result.Skipped++
 				continue
 			}

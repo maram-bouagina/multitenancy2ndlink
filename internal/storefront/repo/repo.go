@@ -387,10 +387,15 @@ func EffectivePrice(p *prodModels.Product) (float64, bool) {
 // ToCategoryPublic converts a Category model to a public DTO (recursive).
 func ToCategoryPublic(c *prodModels.Category) sfDto.CategoryPublicResponse {
 	resp := sfDto.CategoryPublicResponse{
-		ID:          c.ID.String(),
-		Name:        c.Name,
-		Slug:        c.Slug,
-		Description: c.Description,
+		ID:              c.ID.String(),
+		Name:            c.Name,
+		Slug:            c.Slug,
+		Description:     c.Description,
+		MetaTitle:       c.MetaTitle,
+		MetaDescription: c.MetaDescription,
+		CanonicalURL:    c.CanonicalURL,
+		Noindex:         c.Noindex,
+		ImageURL:        c.ImageURL,
 	}
 	for i := range c.Children {
 		resp.Children = append(resp.Children, ToCategoryPublic(&c.Children[i]))
@@ -416,6 +421,10 @@ func ToProductPublic(p *prodModels.Product, images []prodModels.ProductImage) sf
 		Weight:            p.Weight,
 		Dimensions:        p.Dimensions,
 		TaxClass:          p.TaxClass,
+		MetaTitle:         p.MetaTitle,
+		MetaDescription:   p.MetaDescription,
+		CanonicalURL:      p.CanonicalURL,
+		Noindex:           p.Noindex,
 		TrackStock:        p.TrackStock,
 		InStock:           !p.TrackStock || p.Stock > 0,
 		Stock:             p.Stock,
@@ -441,9 +450,15 @@ func ToProductPublic(p *prodModels.Product, images []prodModels.ProductImage) sf
 	}
 	for _, col := range p.Collections {
 		resp.Collections = append(resp.Collections, sfDto.CollectionPublicResponse{
-			ID:   col.ID.String(),
-			Name: col.Name,
-			Slug: col.Slug,
+			ID:              col.ID.String(),
+			Name:            col.Name,
+			Slug:            col.Slug,
+			Description:     col.Description,
+			MetaTitle:       col.MetaTitle,
+			MetaDescription: col.MetaDescription,
+			CanonicalURL:    col.CanonicalURL,
+			Noindex:         col.Noindex,
+			ImageURL:        col.ImageURL,
 		})
 	}
 	for _, img := range images {

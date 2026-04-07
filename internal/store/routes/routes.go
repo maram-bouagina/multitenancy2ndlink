@@ -20,12 +20,18 @@ func RegisterStoreRoutes(app *fiber.App, db *gorm.DB) {
 		log.Fatalf("store media storage initialization failed: %v", err)
 	}
 
-	h := storeHandlers.NewStoreHandler(services.NewStoreService(repo.NewStoreRepository(), authRepo.NewTenantRepository(db)), storage)
+	pageRepo := repo.NewPageRepository()
+	h := storeHandlers.NewStoreHandler(
+		services.NewStoreService(repo.NewStoreRepository(), authRepo.NewTenantRepository(db), pageRepo),
+		storage,
+	)
+	ph := storeHandlers.NewPageHandler(services.NewPageService(pageRepo))
 
 	g := app.Group("/api/stores",
 		middleware.RequireAuth(),
 		middleware.TenantDB(),
 	)
+	// Store routes (inchangées)
 	g.Post("/", h.Create)
 	g.Get("/", h.GetAll)
 	g.Get("/:id", h.GetByID)
@@ -35,4 +41,12 @@ func RegisterStoreRoutes(app *fiber.App, db *gorm.DB) {
 	g.Post("/:id/media", h.UploadMedia)
 	g.Post("/:id/customization/publish", h.PublishCustomization)
 	g.Delete("/:id", h.Delete)
+
+	// Page routes
+	g.Get("/:storeId/pages", ph.List)
+	g.Post("/:storeId/pages", ph.Create)
+	g.Get("/:storeId/pages/:pageId", ph.GetByID)
+	g.Put("/:storeId/pages/:pageId", ph.Update)
+	g.Post("/:storeId/pages/:pageId/publish", ph.Publish)
+	g.Delete("/:storeId/pages/:pageId", ph.Delete)
 }

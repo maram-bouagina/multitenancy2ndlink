@@ -148,14 +148,18 @@ func (h *ImportExportHandler) ProductImportTemplate(c *fiber.Ctx) error {
 		"price", "sale_price", "currency", "sku",
 		"track_stock", "stock", "low_stock_threshold",
 		"weight", "dimensions", "brand", "tax_class",
-		"category_slug", "category_name", "category_id", "image_url", "image_urls",
+		"category_id", "category_slug", "category_name", "published_at", "image_url", "image_urls",
+		"meta_title", "meta_description", "canonical_url", "noindex",
 	}
 	return sendTemplate(c, "products_template", headers, format)
 }
 
 // GET /api/stores/:storeId/categories/import/template?format=csv|xlsx
 func (h *ImportExportHandler) CategoryImportTemplate(c *fiber.Ctx) error {
-	headers := []string{"name", "slug", "description", "visibility", "parent_slug", "parent_id"}
+	headers := []string{
+		"id", "name", "slug", "description", "visibility", "parent_id", "parent_slug",
+		"meta_title", "meta_description", "canonical_url", "noindex", "image_url",
+	}
 	return sendTemplate(c, "categories_template", headers, c.Query("format", "csv"))
 }
 
@@ -307,7 +311,10 @@ func (h *ImportExportHandler) ImportCollections(c *fiber.Ctx) error {
 
 // GET /api/stores/:storeId/collections/import/template
 func (h *ImportExportHandler) CollectionImportTemplate(c *fiber.Ctx) error {
-	headers := []string{"name", "slug", "type", "rule"}
+	headers := []string{
+		"id", "name", "slug", "type", "rule",
+		"description", "meta_title", "meta_description", "canonical_url", "noindex", "image_url",
+	}
 	return sendTemplate(c, "collections_template", headers, c.Query("format", "csv"))
 }
 

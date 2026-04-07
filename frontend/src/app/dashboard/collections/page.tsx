@@ -17,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Download, Edit, PackageOpen, Search, Trash2, Upload } from 'lucide-react';
+import { Download, Edit, Eye, PackageOpen, Search, Trash2, Upload } from 'lucide-react';
 
 export default function CollectionsPage() {
   const PAGE_SIZE = 10;
@@ -26,6 +26,7 @@ export default function CollectionsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [imageFilter, setImageFilter] = useState('');
   const [selectedCollectionIds, setSelectedCollectionIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -38,15 +39,31 @@ export default function CollectionsPage() {
   const allCollections = collections ?? [];
   const filteredCollections = allCollections.filter((collection) => {
     const query = search.trim().toLowerCase();
-    const matchesSearch = !query || collection.name.toLowerCase().includes(query) || collection.slug.toLowerCase().includes(query);
+    const searchHaystack = [
+      collection.name,
+      collection.slug,
+      collection.description,
+      collection.rule,
+      collection.meta_title,
+      collection.meta_description,
+      collection.canonical_url,
+      collection.image_url,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    const matchesSearch = !query || searchHaystack.includes(query);
     const matchesType = !typeFilter || collection.type === typeFilter;
-    return matchesSearch && matchesType;
+    const matchesImage = !imageFilter
+      || (imageFilter === 'with-image' && !!collection.image_url)
+      || (imageFilter === 'without-image' && !collection.image_url);
+    return matchesSearch && matchesType && matchesImage;
   });
   const pageCount = Math.max(1, Math.ceil(filteredCollections.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const paginatedCollections = filteredCollections.slice(pageStart, pageStart + PAGE_SIZE);
-  const currentPageIds = paginatedCollections.map((collection) => collection.id);
+  const filteredCollectionIds = filteredCollections.map((collection) => collection.id);
   const validSelectedCollectionIds = selectedCollectionIds.filter((id) => allCollections.some((collection) => collection.id === id));
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -60,10 +77,12 @@ export default function CollectionsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this collection?')) return;
+    const collection = allCollections.find((c) => c.id === id);
+    const effectiveStoreId = collection?.store_id ?? storeId;
     try {
-      await deleteCollectionMutation.mutateAsync({ storeId, collectionId: id });
-    } catch (error) {
-      console.error(error);
+      await deleteCollectionMutation.mutateAsync({ storeId: effectiveStoreId, collectionId: id });
+    } catch (error: any) {
+      if (error?.response?.status !== 404) console.error(error);
     }
   };
 
@@ -71,10 +90,14 @@ export default function CollectionsPage() {
     if (validSelectedCollectionIds.length === 0) return;
     if (!confirm(`Delete ${validSelectedCollectionIds.length} selected collection(s)?`)) return;
     try {
-      await Promise.all(validSelectedCollectionIds.map((collectionId) => deleteCollectionMutation.mutateAsync({ storeId, collectionId })));
+      await Promise.all(validSelectedCollectionIds.map((collectionId) => {
+        const collection = allCollections.find((c) => c.id === collectionId);
+        const effectiveStoreId = collection?.store_id ?? storeId;
+        return deleteCollectionMutation.mutateAsync({ storeId: effectiveStoreId, collectionId });
+      }));
       setSelectedCollectionIds([]);
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      if (error?.response?.status !== 404) console.error(error);
     }
   };
 
@@ -87,9 +110,9 @@ export default function CollectionsPage() {
   const toggleSelectAll = (checked: boolean) => {
     setSelectedCollectionIds((current) => {
       if (checked) {
-        return Array.from(new Set([...current, ...currentPageIds]));
+        return Array.from(new Set([...current, ...filteredCollectionIds]));
       }
-      return current.filter((id) => !currentPageIds.includes(id));
+      return current.filter((id) => !filteredCollectionIds.includes(id));
     });
   };
 
@@ -218,7 +241,7 @@ export default function CollectionsPage() {
                     setPage(1);
                   }}
                   className="pl-9"
-                  placeholder="Search collections by name or slug..."
+                  placeholder="Search name, slug, description, rule..."
                 />
               </div>
               <select
@@ -232,6 +255,18 @@ export default function CollectionsPage() {
                 <option value="">All types</option>
                 <option value="manual">Manual</option>
                 <option value="automatic">Automatic</option>
+              </select>
+              <select
+                value={imageFilter}
+                onChange={(event) => {
+                  setImageFilter(event.target.value);
+                  setPage(1);
+                }}
+                className="h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              >
+                <option value="">All image states</option>
+                <option value="with-image">With image</option>
+                <option value="without-image">Without image</option>
               </select>
             </div>
             <Button
@@ -252,7 +287,7 @@ export default function CollectionsPage() {
                   <TableHead className="w-10">
                     <input
                       type="checkbox"
-                      checked={currentPageIds.length > 0 && currentPageIds.every((id) => validSelectedCollectionIds.includes(id))}
+                      checked={filteredCollectionIds.length > 0 && filteredCollectionIds.every((id) => validSelectedCollectionIds.includes(id))}
                       onChange={(e) => toggleSelectAll(e.target.checked)}
                       aria-label="Select all collections"
                     />
@@ -280,13 +315,19 @@ export default function CollectionsPage() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" asChild>
-                          <Link href={`/dashboard/collections/${collection.id}/products`}>
+                          <Link href={`/dashboard/collections/${collection.id}/details`} prefetch={false}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            View
+                          </Link>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/dashboard/collections/${collection.id}/products`} prefetch={false}>
                             <PackageOpen className="mr-2 h-4 w-4" />
                             Products
                           </Link>
                         </Button>
                         <Button variant="outline" size="sm" asChild>
-                          <Link href={`/dashboard/collections/${collection.id}`}>
+                          <Link href={`/dashboard/collections/${collection.id}`} prefetch={false}>
                             <Edit className="mr-2 h-4 w-4" />
                             Edit
                           </Link>

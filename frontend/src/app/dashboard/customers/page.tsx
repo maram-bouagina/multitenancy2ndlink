@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -37,15 +37,52 @@ export default function CustomersPage() {
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isSelectingAllCustomers, setIsSelectingAllCustomers] = useState(false);
   const [importMessage, setImportMessage] = useState('');
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useCustomers(storeId, { page, limit: 20, search, status: statusFilter || undefined });
   const deleteCustomerMutation = useDeleteCustomer();
   const customers = data?.data ?? [];
-  const validSelectedCustomerIds = selectedCustomerIds.filter((id) => customers.some((customer) => customer.id === id));
+  const totalFilteredCustomers = data?.total ?? 0;
+  const allFilteredSelected = totalFilteredCustomers > 0 && selectedCustomerIds.length === totalFilteredCustomers;
+  const someFilteredSelected = selectedCustomerIds.length > 0 && !allFilteredSelected;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someFilteredSelected;
+    }
+  }, [someFilteredSelected]);
+
+  const fetchFilteredCustomerIds = async () => {
+    if (!storeId) {
+      return [] as string[];
+    }
+
+    const params = { page: 1, limit: 100, search, status: statusFilter || undefined };
+    const firstPage = await apiClient.getCustomers(storeId, params);
+    const matchingIds = firstPage.data.map((customer) => customer.id);
+
+    if (firstPage.total_pages <= 1) {
+      return matchingIds;
+    }
+
+    const remainingPages = await Promise.all(
+      Array.from({ length: firstPage.total_pages - 1 }, (_, index) =>
+        apiClient.getCustomers(storeId, { ...params, page: index + 2 })
+      )
+    );
+
+    return Array.from(
+      new Set([
+        ...matchingIds,
+        ...remainingPages.flatMap((response) => response.data.map((customer) => customer.id)),
+      ])
+    );
+  };
 
   const downloadBlob = (blob: Blob, filename: string) => {
     const downloadUrl = window.URL.createObjectURL(blob);
@@ -73,10 +110,10 @@ export default function CustomersPage() {
   };
 
   const handleDeleteSelected = async () => {
-    if (validSelectedCustomerIds.length === 0) return;
-    if (!confirm(t.customersPage.deleteSelectedConfirm.replace('{count}', String(validSelectedCustomerIds.length)))) return;
+    if (selectedCustomerIds.length === 0) return;
+    if (!confirm(t.customersPage.deleteSelectedConfirm.replace('{count}', String(selectedCustomerIds.length)))) return;
     try {
-      await Promise.all(validSelectedCustomerIds.map((customerId) => deleteCustomerMutation.mutateAsync({ storeId, customerId })));
+      await Promise.all(selectedCustomerIds.map((customerId) => deleteCustomerMutation.mutateAsync({ storeId, customerId })));
       setSelectedCustomerIds([]);
     } catch (error) {
       console.error(error);
@@ -89,14 +126,25 @@ export default function CustomersPage() {
     ));
   };
 
-  const toggleSelectAll = (checked: boolean) => {
-    const currentPageIds = customers.map((customer) => customer.id);
-    setSelectedCustomerIds((current) => {
-      if (checked) {
-        return Array.from(new Set([...current, ...currentPageIds]));
-      }
-      return current.filter((id) => !currentPageIds.includes(id));
-    });
+  const toggleSelectAll = async (checked: boolean) => {
+    if (!storeId) return;
+
+    setIsSelectingAllCustomers(true);
+    try {
+      const filteredCustomerIds = await fetchFilteredCustomerIds();
+      setSelectedCustomerIds((current) => {
+        if (checked) {
+          return Array.from(new Set([...current, ...filteredCustomerIds]));
+        }
+
+        const filteredIdSet = new Set(filteredCustomerIds);
+        return current.filter((id) => !filteredIdSet.has(id));
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSelectingAllCustomers(false);
+    }
   };
 
   const getStatusLabel = (status: string) => {
@@ -251,11 +299,11 @@ export default function CustomersPage() {
             <Button
               variant="destructive"
               size="sm"
-              disabled={validSelectedCustomerIds.length === 0 || deleteCustomerMutation.isPending}
+              disabled={selectedCustomerIds.length === 0 || deleteCustomerMutation.isPending}
               onClick={() => void handleDeleteSelected()}
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              {t.productsPage.deleteSelected} ({validSelectedCustomerIds.length})
+              {t.productsPage.deleteSelected} ({selectedCustomerIds.length})
             </Button>
           </div>
 
@@ -265,9 +313,11 @@ export default function CustomersPage() {
                 <TableRow>
                   <TableHead className="w-10">
                     <input
+                      ref={selectAllRef}
                       type="checkbox"
-                      checked={customers.length > 0 && customers.every((customer) => validSelectedCustomerIds.includes(customer.id))}
-                      onChange={(e) => toggleSelectAll(e.target.checked)}
+                      checked={allFilteredSelected}
+                      disabled={isSelectingAllCustomers || totalFilteredCustomers === 0}
+                      onChange={(e) => void toggleSelectAll(e.target.checked)}
                       aria-label="Select all customers"
                     />
                   </TableHead>
@@ -285,7 +335,7 @@ export default function CustomersPage() {
                     <TableCell>
                       <input
                         type="checkbox"
-                        checked={validSelectedCustomerIds.includes(customer.id)}
+                        checked={selectedCustomerIds.includes(customer.id)}
                         onChange={(e) => toggleCustomerSelection(customer.id, e.target.checked)}
                         aria-label={`Select customer ${customer.email}`}
                       />
@@ -349,7 +399,6 @@ export default function CustomersPage() {
               previousLabel={t.customersPage.previous}
               nextLabel={t.customersPage.next}
               onPageChange={(nextPage) => {
-                setSelectedCustomerIds([]);
                 setPage(nextPage);
               }}
             />

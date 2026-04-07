@@ -16,6 +16,9 @@ import {
   Truck,
   Shield,
   RefreshCw,
+  Search,
+  User,
+  LogIn,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -28,6 +31,8 @@ import type {
   CategoryPublic,
   CollectionPublic,
 } from "@/lib/types/storefront";
+import type { StorefrontPageListItem } from "@/lib/api/storefront-client";
+import { StorefrontAuthButton } from "@/components/storefront/auth-button";
 
 /* ────────────────────────── dynamic data ──────────────────────────────── */
 
@@ -36,6 +41,7 @@ export interface StorefrontData {
   products: ProductPublic[];
   categories: CategoryPublic[];
   collections: CollectionPublic[];
+  pages?: StorefrontPageListItem[];
 }
 
 /** Global context that every Puck component can consume. Injected via <Puck root>. */
@@ -1098,17 +1104,16 @@ type PuckProps = {
     shadow: ShadowScale;
   };
   StoreHeader: {
-    eyebrow: string;
-    subtitle: string;
-    ctaLabel: string;
-    ctaLink: string;
+    homeLabel: string;
+    productsLabel: string;
+    showCategories: boolean;
+    showCollections: boolean;
+    showPages: boolean;
+    showSearch: boolean;
+    showAuth: boolean;
+    showCart: boolean;
+    cartLabel: string;
     showLogo: boolean;
-    backgroundColor: string;
-    titleSize: "md" | "lg";
-    titleWeight: FontWeightScale;
-    buttonSize: ButtonSizeScale;
-    buttonRadius: RadiusScale;
-    spacing: "sm" | "md" | "lg";
   };
   StoreNavigation: {
     homeLabel: string;
@@ -1193,6 +1198,45 @@ type PuckProps = {
     subtitle: string;
     columns: number;
     maxItems: number;
+    backgroundColor: string;
+    titleSize: FontSizeScale;
+    titleWeight: FontWeightScale;
+    cardRadius: RadiusScale;
+    shadow: ShadowScale;
+    spacing: "sm" | "md" | "lg";
+  };
+  HandpickedProducts: {
+    title: string;
+    subtitle: string;
+    productSlugs: string[];
+    columns: 2 | 3 | 4;
+    cardStyle: "default" | "minimal" | "shadow";
+    showBrand: boolean;
+    showSaleBadge: boolean;
+    cardRadius: RadiusScale;
+    shadow: ShadowScale;
+    backgroundColor: string;
+    titleSize: FontSizeScale;
+    titleWeight: FontWeightScale;
+    spacing: "sm" | "md" | "lg";
+  };
+  HandpickedCategories: {
+    title: string;
+    subtitle: string;
+    categorySlugs: string[];
+    columns: 3 | 4 | 6;
+    style: "cards" | "circles" | "minimal";
+    backgroundColor: string;
+    titleSize: FontSizeScale;
+    titleWeight: FontWeightScale;
+    cardRadius: RadiusScale;
+    shadow: ShadowScale;
+    spacing: "sm" | "md" | "lg";
+  };
+  CategorySpotlight: {
+    categorySlug: string;
+    showProducts: boolean;
+    maxProducts: number;
     backgroundColor: string;
     titleSize: FontSizeScale;
     titleWeight: FontWeightScale;
@@ -1437,7 +1481,7 @@ export const puckConfig: Config<PuckProps> = {
   categories: {
     shell: { title: "Store Shell", components: ["StoreHeader", "StoreNavigation", "StoreFooter"] },
     hero: { title: "Hero & Banners", components: ["HeroBlock", "AnnouncementBar", "ImageBanner", "Marquee"] },
-    products: { title: "Products & Collections", components: ["FeaturedProducts", "CategoriesGrid", "CollectionsShowcase", "PromoGrid", "ProductSpotlight"] },
+    products: { title: "Products & Collections", components: ["FeaturedProducts", "CategoriesGrid", "CollectionsShowcase", "PromoGrid", "ProductSpotlight", "HandpickedProducts", "HandpickedCategories", "CategorySpotlight"] },
     content: { title: "Content", components: ["RichText", "Testimonials", "FeatureColumns", "FAQ", "VideoEmbed", "BrandLogos"] },
     marketing: { title: "Marketing", components: ["Newsletter", "CallToAction", "TrustBadges", "CountdownBanner", "SocialFollow"] },
     layout: { title: "Layout", components: ["ContainerBlock", "RowBlock", "ColumnBlock", "Spacer", "Divider"] },
@@ -1703,119 +1747,164 @@ export const puckConfig: Config<PuckProps> = {
     StoreHeader: {
       label: "Store Header",
       fields: {
-        eyebrow: { type: "text", label: "Eyebrow" },
-        subtitle: { type: "text", label: "Subtitle" },
-        ctaLabel: { type: "text", label: "Button label" },
-        ctaLink: { type: "text", label: "Button link" },
-        backgroundColor: { type: "text", label: "Background color" },
-        titleSize: {
-          type: "select",
-          label: "Title size",
-          options: [
-            { label: "Medium", value: "md" },
-            { label: "Large", value: "lg" },
-          ],
-        },
-        titleWeight: {
-          type: "select",
-          label: "Title weight",
-          options: [
-            { label: "Regular", value: "regular" },
-            { label: "Medium", value: "medium" },
-            { label: "Semi-bold", value: "semibold" },
-            { label: "Large", value: "bold" },
-          ],
-        },
-        buttonSize: {
-          type: "select",
-          label: "Button size",
-          options: [
-            { label: "Small", value: "sm" },
-            { label: "Medium", value: "md" },
-            { label: "Large", value: "lg" },
-          ],
-        },
-        buttonRadius: {
-          type: "select",
-          label: "Button radius",
-          options: [
-            { label: "Small", value: "sm" },
-            { label: "Medium", value: "md" },
-            { label: "Large", value: "lg" },
-            { label: "Extra large", value: "xl" },
-            { label: "Full", value: "full" },
-          ],
-        },
-        spacing: {
-          type: "select",
-          label: "Vertical spacing",
-          options: [
-            { label: "Compact", value: "sm" },
-            { label: "Comfortable", value: "md" },
-            { label: "Spacious", value: "lg" },
-          ],
-        },
+        homeLabel: { type: "text", label: "Home label" },
+        productsLabel: { type: "text", label: "Products label" },
+        showCategories: { type: "radio", label: "Show category links", options: [
+          { label: "Yes", value: true }, { label: "No", value: false },
+        ]},
+        showCollections: { type: "radio", label: "Show collection links", options: [
+          { label: "Yes", value: true }, { label: "No", value: false },
+        ]},
+        showPages: { type: "radio", label: "Show custom page links", options: [
+          { label: "Yes", value: true }, { label: "No", value: false },
+        ]},
+        showSearch: { type: "radio", label: "Show search icon", options: [
+          { label: "Yes", value: true }, { label: "No", value: false },
+        ]},
+        showAuth: { type: "radio", label: "Show login/account", options: [
+          { label: "Yes", value: true }, { label: "No", value: false },
+        ]},
+        showCart: { type: "radio", label: "Show cart button", options: [
+          { label: "Yes", value: true }, { label: "No", value: false },
+        ]},
+        cartLabel: { type: "text", label: "Cart label" },
         showLogo: { type: "radio", label: "Show logo if available", options: [
           { label: "Yes", value: true }, { label: "No", value: false },
         ]},
       },
       defaultProps: {
-        eyebrow: "Built for your brand",
-        subtitle: "Use this top block for identity, trust, and a strong first interaction.",
-        ctaLabel: "Browse catalog",
-        ctaLink: "/products",
-        backgroundColor: "",
-        titleSize: "lg",
-        titleWeight: "bold",
-        buttonSize: "md",
-        buttonRadius: "full",
-        spacing: "md",
+        homeLabel: "Home",
+        productsLabel: "Products",
+        showCategories: true,
+        showCollections: true,
+        showPages: true,
+        showSearch: true,
+        showAuth: true,
+        showCart: true,
+        cartLabel: "Cart",
         showLogo: true,
       },
-      render: ({ eyebrow, subtitle, ctaLabel, ctaLink, showLogo, backgroundColor, titleSize, titleWeight, buttonSize, buttonRadius, spacing }) => {
+      render: (props) => {
+        // Explicitly default booleans — saved layouts from before the rewrite won't have these keys
+        const homeLabel = props.homeLabel ?? "Home";
+        const productsLabel = props.productsLabel ?? "Products";
+        const showCollections = props.showCollections ?? true;
+        const showPages = props.showPages ?? true;
+        const showSearch = props.showSearch ?? true;
+        const showAuth = props.showAuth ?? true;
+        const showCart = props.showCart ?? true;
+        const cartLabel = props.cartLabel ?? "Cart";
+        const showLogo = props.showLogo ?? true;
+
         const data = getStorefrontData();
         const store = data?.store;
         if (!store) return <></>;
         const theme = getThemeTokens(store);
-        const href = resolveStoreHref(store.slug, ctaLink);
-        const sectionBackground = normalizeOptionalColor(backgroundColor, theme.surfaceAlt);
+        const collections = showCollections ? (data?.collections || []).slice(0, 3) : [];
+        const pages = showPages ? (data?.pages || []).filter(p => p.slug !== "index") : [];
+        const isDark = store.theme_mode === "dark";
 
         return (
-          <section className={`px-4 ${resolveSectionPadding(spacing)}`} style={{ backgroundColor: sectionBackground, borderBottom: `1px solid ${theme.border}` }}>
-            <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-4">
-                {showLogo && store.logo ? (
-                  <Image
-                    src={resolveMediaUrl(store.logo)}
-                    alt={store.name}
-                    width={132}
-                    height={40}
-                    className="h-10 w-auto object-contain"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-bold text-white" style={{ backgroundColor: theme.primary }}>
-                    {store.name.slice(0, 2).toUpperCase()}
-                  </div>
-                )}
-                <div>
-                  {eyebrow && <p className="text-xs font-semibold uppercase tracking-[0.24em]" style={{ color: theme.primary }}>{eyebrow}</p>}
-                  <h1 className="mt-1 tracking-tight" style={{ ...titleStyle(titleSize === "lg" ? "xl" : "lg", titleWeight), color: theme.textPrimary }}>{store.name}</h1>
-                  {subtitle && <p className="mt-1 text-sm" style={{ color: theme.textSecondary }}>{subtitle}</p>}
+          <header
+            className="sticky top-0 z-50 border-b backdrop-blur-sm shadow-sm"
+            style={{
+              borderColor: theme.border,
+              backgroundColor: isDark ? "rgba(15,23,42,0.92)" : "rgba(255,255,255,0.95)",
+            }}
+          >
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+              <div className="flex h-16 items-center justify-between gap-4">
+                {/* Logo / Store name */}
+                <Link href={`/store/${store.slug}`} className="flex items-center gap-3 shrink-0">
+                  {showLogo && store.logo ? (
+                    <Image
+                      src={resolveMediaUrl(store.logo)}
+                      alt={store.name}
+                      width={120}
+                      height={36}
+                      className="h-9 w-auto object-contain"
+                      unoptimized
+                    />
+                  ) : (
+                    <span className="text-xl font-bold tracking-tight" style={{ color: theme.primary }}>
+                      {store.name}
+                    </span>
+                  )}
+                </Link>
+
+                {/* Navigation */}
+                <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
+                  <Link
+                    href={`/store/${store.slug}`}
+                    className="px-3 py-2 rounded-md text-sm font-medium transition-colors hover:opacity-80"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    {homeLabel}
+                  </Link>
+                  <Link
+                    href={`/store/${store.slug}/products`}
+                    className="px-3 py-2 rounded-md text-sm font-medium transition-colors hover:opacity-80"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    {productsLabel}
+                  </Link>
+                  <Link
+                    href={`/store/${store.slug}/categories`}
+                    className="px-3 py-2 rounded-md text-sm font-medium transition-colors hover:opacity-80 border border-blue-500 text-blue-600 ml-2"
+                    style={{ borderColor: theme.primary, color: theme.primary }}
+                  >
+                    Toutes les catégories
+                  </Link>
+                  {collections.map((col) => (
+                    <Link
+                      key={col.id}
+                      href={`/store/${store.slug}/collections/${col.slug}`}
+                      className="px-3 py-2 rounded-md text-sm font-medium transition-colors hover:opacity-80"
+                      style={{ color: theme.textSecondary }}
+                    >
+                      {col.name}
+                    </Link>
+                  ))}
+                  {pages.map((page) => (
+                    <Link
+                      key={page.slug}
+                      href={`/store/${store.slug}/p/${page.slug}`}
+                      className="px-3 py-2 rounded-md text-sm font-medium transition-colors hover:opacity-80"
+                      style={{ color: theme.textSecondary }}
+                    >
+                      {page.title}
+                    </Link>
+                  ))}
+                </nav>
+
+                {/* Right actions: search, auth, cart */}
+                <div className="flex items-center gap-1 shrink-0">
+                  {showSearch && (
+                    <Link
+                      href={`/store/${store.slug}/products`}
+                      className="p-2 rounded-md transition-colors hover:opacity-80"
+                      style={{ color: theme.textMuted }}
+                      aria-label="Search"
+                    >
+                      <Search className="w-5 h-5" />
+                    </Link>
+                  )}
+                  {showAuth && (
+                    <StorefrontAuthButton slug={store.slug} />
+                  )}
+                  {showCart && (
+                    <div
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-white transition-opacity hover:opacity-90"
+                      style={{ backgroundColor: theme.primary }}
+                    >
+                      <ShoppingBag className="w-4 h-4" />
+                      <span className="hidden sm:inline">{cartLabel}</span>
+                    </div>
+                  )}
                 </div>
               </div>
-              {ctaLabel && (
-                <Link
-                  href={href}
-                  className={`inline-flex items-center gap-2 self-start font-semibold transition-opacity hover:opacity-90 md:self-center ${resolveButtonSizeClasses(buttonSize)}`}
-                  style={{ backgroundColor: theme.primary, color: theme.buttonTextOnPrimary, borderRadius: resolveRadius(buttonRadius) }}
-                >
-                  {ctaLabel}
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              )}
             </div>
-          </section>
+          </header>
         );
       },
     },
@@ -1859,75 +1948,9 @@ export const puckConfig: Config<PuckProps> = {
         ctaLink: "/products",
         sticky: true,
       },
-      render: ({ homeLabel, productsLabel, showCategories, showCollections, featuredCategorySlug, featuredCollectionSlug, ctaLabel, ctaLink, sticky }) => {
-        const data = getStorefrontData();
-        const store = data?.store;
-        if (!store) return <></>;
-        const theme = getThemeTokens(store);
-        const categories = showCategories ? (data?.categories || []).slice(0, 3) : [];
-        const collections = showCollections ? (data?.collections || []).slice(0, 2) : [];
-        const featuredCategory = featuredCategorySlug && featuredCategorySlug !== "__all__"
-          ? data?.categories.find((category) => category.slug === featuredCategorySlug)
-          : undefined;
-        const featuredCollection = featuredCollectionSlug && featuredCollectionSlug !== "__all__"
-          ? data?.collections.find((collection) => collection.slug === featuredCollectionSlug)
-          : undefined;
-
-        return (
-          <nav
-            className={`${sticky ? "sticky top-0 z-40" : ""} px-4 py-3 backdrop-blur-sm`}
-            style={{ backgroundColor: theme.surface, borderBottom: `1px solid ${theme.border}` }}
-          >
-            <div className="mx-auto flex max-w-7xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                <Link href={`/store/${store.slug}`} className="rounded-full px-3 py-1.5 transition-colors" style={{ color: theme.textPrimary, backgroundColor: theme.surfaceAlt }}>
-                  {homeLabel}
-                </Link>
-                <Link href={`/store/${store.slug}/products`} className="rounded-full px-3 py-1.5 transition-colors" style={{ color: theme.textPrimary, backgroundColor: theme.surfaceAlt }}>
-                  {productsLabel}
-                </Link>
-                {categories.map((category) => (
-                  <Link
-                    key={category.id}
-                    href={`/store/${store.slug}/categories/${category.slug}`}
-                    className="rounded-full px-3 py-1.5 transition-colors"
-                    style={{ color: theme.textSecondary, backgroundColor: theme.surfaceMuted }}
-                  >
-                    {category.name}
-                  </Link>
-                ))}
-                {collections.map((collection) => (
-                  <Link
-                    key={collection.id}
-                    href={`/store/${store.slug}/collections/${collection.slug}`}
-                    className="rounded-full px-3 py-1.5 transition-colors"
-                    style={{ color: theme.textSecondary, backgroundColor: theme.surfaceMuted }}
-                  >
-                    {collection.name}
-                  </Link>
-                ))}
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                {featuredCategory && (
-                  <Link href={`/store/${store.slug}/categories/${featuredCategory.slug}`} className="rounded-full border px-3 py-1.5 font-medium" style={{ borderColor: theme.border, color: theme.textPrimary }}>
-                    {translatePuckText("Category:")} {featuredCategory.name}
-                  </Link>
-                )}
-                {featuredCollection && (
-                  <Link href={`/store/${store.slug}/collections/${featuredCollection.slug}`} className="rounded-full border px-3 py-1.5 font-medium" style={{ borderColor: theme.border, color: theme.textPrimary }}>
-                    {translatePuckText("Collection:")} {featuredCollection.name}
-                  </Link>
-                )}
-                {ctaLabel && (
-                  <Link href={resolveStoreHref(store.slug, ctaLink)} className="inline-flex items-center gap-2 rounded-full px-4 py-2 font-semibold text-white" style={{ backgroundColor: theme.primary }}>
-                    {ctaLabel}
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                )}
-              </div>
-            </div>
-          </nav>
-        );
+      render: () => {
+        // Navigation is now handled by StoreHeader — this component is kept for layout compatibility
+        return <></>;
       },
     },
 
@@ -2732,6 +2755,352 @@ export const puckConfig: Config<PuckProps> = {
                   </Link>
                 ))}
               </div>
+            </div>
+          </section>
+        );
+      },
+    },
+
+    /* ─────────── Handpicked Products ─────────── */
+    HandpickedProducts: {
+      label: "Handpicked Products",
+      fields: {
+        title: { type: "text", label: "Section title" },
+        subtitle: { type: "text", label: "Subtitle" },
+        productSlugs: {
+          type: "custom" as const,
+          label: "Products",
+          render: ({ value, onChange, readOnly }: { value: string[]; onChange: (v: string[]) => void; readOnly?: boolean }) => {
+            const products = getStorefrontData()?.products ?? [];
+            const selected: string[] = Array.isArray(value) ? value : [];
+            return (
+              <div className="space-y-1 max-h-48 overflow-y-auto border border-slate-200 rounded-md p-2">
+                {products.length === 0 && <p className="text-xs text-slate-400">No products available.</p>}
+                {products.map((p) => (
+                  <label key={p.id} className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      disabled={readOnly}
+                      checked={selected.includes(p.slug)}
+                      onChange={(e) => {
+                        const next = e.target.checked ? [...selected, p.slug] : selected.filter((s) => s !== p.slug);
+                        onChange(next);
+                      }}
+                    />
+                    <span className="truncate">{p.title}</span>
+                  </label>
+                ))}
+              </div>
+            );
+          },
+        },
+        columns: {
+          type: "select",
+          label: "Columns",
+          options: [{ label: "2", value: 2 }, { label: "3", value: 3 }, { label: "4", value: 4 }],
+        },
+        cardStyle: {
+          type: "select",
+          label: "Card style",
+          options: [{ label: "Default", value: "default" }, { label: "Minimal", value: "minimal" }, { label: "Shadow", value: "shadow" }],
+        },
+        showBrand: { type: "select", label: "Show brand", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
+        showSaleBadge: { type: "select", label: "Show sale badge", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
+        cardRadius: {
+          type: "select",
+          label: "Card radius",
+          options: [{ label: "None", value: "none" }, { label: "Small", value: "sm" }, { label: "Medium", value: "md" }, { label: "Large", value: "lg" }, { label: "XL", value: "xl" }],
+        },
+        shadow: {
+          type: "select",
+          label: "Card shadow",
+          options: [{ label: "None", value: "none" }, { label: "Small", value: "sm" }, { label: "Medium", value: "md" }, { label: "Large", value: "lg" }],
+        },
+        backgroundColor: { type: "text", label: "Section background color" },
+        titleSize: {
+          type: "select",
+          label: "Title size",
+          options: [{ label: "Small", value: "sm" }, { label: "Medium", value: "md" }, { label: "Large", value: "lg" }],
+        },
+        titleWeight: {
+          type: "select",
+          label: "Title weight",
+          options: [{ label: "Regular", value: "regular" }, { label: "Medium", value: "medium" }, { label: "Semi-bold", value: "semibold" }, { label: "Bold", value: "bold" }],
+        },
+        spacing: {
+          type: "select",
+          label: "Vertical spacing",
+          options: [{ label: "Compact", value: "sm" }, { label: "Comfortable", value: "md" }, { label: "Spacious", value: "lg" }],
+        },
+      },
+      defaultProps: {
+        title: "Our Selection",
+        subtitle: "",
+        productSlugs: [],
+        columns: 4,
+        cardStyle: "default",
+        showBrand: true,
+        showSaleBadge: true,
+        cardRadius: "lg",
+        shadow: "none",
+        backgroundColor: "",
+        titleSize: "md",
+        titleWeight: "bold",
+        spacing: "md",
+      },
+      render: ({ title, subtitle, productSlugs, columns, cardStyle, showBrand, showSaleBadge, cardRadius, shadow, backgroundColor, titleSize, titleWeight, spacing }) => {
+        const data = getStorefrontData();
+        if (!data) return <div className="py-16 text-center text-gray-400">Loading products…</div>;
+        const { store, products } = data;
+        const theme = getThemeTokens(store);
+        const slugSet = new Set<string>(Array.isArray(productSlugs) ? productSlugs : []);
+        const shown = slugSet.size > 0 ? products.filter((p) => slugSet.has(p.slug)) : [];
+        const gridClass = columns === 2 ? "grid-cols-1 sm:grid-cols-2" : columns === 3 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4";
+        const sectionBackground = normalizeOptionalColor(backgroundColor, "transparent");
+        return (
+          <section className={`px-4 ${resolveSectionPadding(spacing)}`} style={{ backgroundColor: sectionBackground }}>
+            <div className="mx-auto max-w-7xl">
+              {(title || subtitle) && (
+                <div className="mb-10">
+                  {title && <h2 style={{ ...titleStyle(titleSize, titleWeight), color: theme.textPrimary }}>{title}</h2>}
+                  {subtitle && <p className="mt-2" style={{ color: theme.textSecondary }}>{subtitle}</p>}
+                </div>
+              )}
+              {shown.length === 0 ? (
+                <p className="py-12 text-center" style={{ color: theme.textMuted }}>{translatePuckText("No products selected yet.")}</p>
+              ) : (
+                <div className={`grid ${gridClass} gap-4 sm:gap-6`}>
+                  {shown.map((p) => (
+                    <ProductCard key={p.id} product={p} slug={store.slug} currency={store.currency} cardStyle={cardStyle} showBrand={showBrand} showSaleBadge={showSaleBadge} radius={cardRadius} shadow={shadow} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      },
+    },
+
+    /* ─────────── Handpicked Categories ─────────── */
+    HandpickedCategories: {
+      label: "Handpicked Categories",
+      fields: {
+        title: { type: "text", label: "Section title" },
+        subtitle: { type: "text", label: "Subtitle" },
+        categorySlugs: {
+          type: "custom" as const,
+          label: "Categories",
+          render: ({ value, onChange, readOnly }: { value: string[]; onChange: (v: string[]) => void; readOnly?: boolean }) => {
+            const categories = getStorefrontData()?.categories ?? [];
+            const selected: string[] = Array.isArray(value) ? value : [];
+            return (
+              <div className="space-y-1 max-h-48 overflow-y-auto border border-slate-200 rounded-md p-2">
+                {categories.length === 0 && <p className="text-xs text-slate-400">No categories available.</p>}
+                {categories.map((c) => (
+                  <label key={c.id} className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      disabled={readOnly}
+                      checked={selected.includes(c.slug)}
+                      onChange={(e) => {
+                        const next = e.target.checked ? [...selected, c.slug] : selected.filter((s) => s !== c.slug);
+                        onChange(next);
+                      }}
+                    />
+                    <span className="truncate">{c.name}</span>
+                  </label>
+                ))}
+              </div>
+            );
+          },
+        },
+        columns: {
+          type: "select",
+          label: "Columns",
+          options: [{ label: "3", value: 3 }, { label: "4", value: 4 }, { label: "6", value: 6 }],
+        },
+        style: {
+          type: "select",
+          label: "Card style",
+          options: [{ label: "Cards", value: "cards" }, { label: "Circles", value: "circles" }, { label: "Minimal", value: "minimal" }],
+        },
+        backgroundColor: { type: "text", label: "Section background color" },
+        titleSize: {
+          type: "select",
+          label: "Title size",
+          options: [{ label: "Small", value: "sm" }, { label: "Medium", value: "md" }, { label: "Large", value: "lg" }],
+        },
+        titleWeight: {
+          type: "select",
+          label: "Title weight",
+          options: [{ label: "Regular", value: "regular" }, { label: "Medium", value: "medium" }, { label: "Semi-bold", value: "semibold" }, { label: "Bold", value: "bold" }],
+        },
+        cardRadius: {
+          type: "select",
+          label: "Card radius",
+          options: [{ label: "None", value: "none" }, { label: "Small", value: "sm" }, { label: "Medium", value: "md" }, { label: "Large", value: "lg" }, { label: "XL", value: "xl" }, { label: "Full", value: "full" }],
+        },
+        shadow: {
+          type: "select",
+          label: "Card shadow",
+          options: [{ label: "None", value: "none" }, { label: "Small", value: "sm" }, { label: "Medium", value: "md" }, { label: "Large", value: "lg" }],
+        },
+        spacing: {
+          type: "select",
+          label: "Vertical spacing",
+          options: [{ label: "Compact", value: "sm" }, { label: "Comfortable", value: "md" }, { label: "Spacious", value: "lg" }],
+        },
+      },
+      defaultProps: {
+        title: "Browse Categories",
+        subtitle: "",
+        categorySlugs: [],
+        columns: 3,
+        style: "cards",
+        backgroundColor: "",
+        titleSize: "md",
+        titleWeight: "bold",
+        cardRadius: "xl",
+        shadow: "sm",
+        spacing: "md",
+      },
+      render: ({ title, subtitle, categorySlugs, columns, style, backgroundColor, titleSize, titleWeight, cardRadius, shadow, spacing }) => {
+        const data = getStorefrontData();
+        if (!data) return <></>;
+        const { store, categories } = data;
+        const theme = getThemeTokens(store);
+        const slugSet = new Set<string>(Array.isArray(categorySlugs) ? categorySlugs : []);
+        const shown = slugSet.size > 0 ? categories.filter((c) => slugSet.has(c.slug)) : [];
+        const sectionBackground = normalizeOptionalColor(backgroundColor, "transparent");
+        const gridClass = columns === 6 ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" : columns === 4 ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
+        const radiusClass = cardRadius === "full" ? "9999px" : cardRadius === "xl" ? "1rem" : cardRadius === "lg" ? "0.75rem" : cardRadius === "md" ? "0.5rem" : cardRadius === "sm" ? "0.25rem" : "0";
+        const shadowClass = shadow === "lg" ? "0 10px 25px rgba(0,0,0,0.12)" : shadow === "md" ? "0 4px 12px rgba(0,0,0,0.08)" : shadow === "sm" ? "0 1px 4px rgba(0,0,0,0.06)" : "none";
+        return (
+          <section className={`px-4 ${resolveSectionPadding(spacing)}`} style={{ backgroundColor: sectionBackground }}>
+            <div className="mx-auto max-w-7xl">
+              {(title || subtitle) && (
+                <div className="mb-10">
+                  {title && <h2 style={{ ...titleStyle(titleSize, titleWeight), color: theme.textPrimary }}>{title}</h2>}
+                  {subtitle && <p className="mt-2" style={{ color: theme.textSecondary }}>{subtitle}</p>}
+                </div>
+              )}
+              {shown.length === 0 ? (
+                <p className="py-12 text-center" style={{ color: theme.textMuted }}>No categories selected yet.</p>
+              ) : (
+                <div className={`grid ${gridClass} gap-4`}>
+                  {shown.map((cat) => (
+                    <Link
+                      key={cat.id}
+                      href={`/store/${store.slug}/categories/${cat.slug}`}
+                      className="group flex flex-col items-center justify-center text-center transition-transform hover:-translate-y-1"
+                      style={{ borderRadius: radiusClass, boxShadow: shadowClass, backgroundColor: theme.surface, border: `1px solid ${theme.border}`, padding: "1.25rem 1rem" }}
+                    >
+                      {style === "circles" && (
+                        <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: withAlpha(theme.primary, "20") }}>
+                          <Tag className="h-6 w-6" style={{ color: theme.primary }} />
+                        </div>
+                      )}
+                      <span className="font-semibold text-sm" style={{ color: theme.textPrimary }}>{cat.name}</span>
+                      {cat.description && style !== "minimal" && (
+                        <span className="mt-1 text-xs line-clamp-2" style={{ color: theme.textSecondary }}>{cat.description}</span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      },
+    },
+
+    /* ─────────── Category Spotlight ─────────── */
+    CategorySpotlight: {
+      label: "Category Spotlight",
+      fields: {
+        categorySlug: { type: "text", label: "Category slug" },
+        showProducts: { type: "select", label: "Show products", options: [{ label: "Yes", value: true }, { label: "No", value: false }] },
+        maxProducts: {
+          type: "select",
+          label: "Max products",
+          options: [{ label: "3", value: 3 }, { label: "4", value: 4 }, { label: "6", value: 6 }, { label: "8", value: 8 }],
+        },
+        backgroundColor: { type: "text", label: "Section background color" },
+        titleSize: {
+          type: "select",
+          label: "Title size",
+          options: [{ label: "Small", value: "sm" }, { label: "Medium", value: "md" }, { label: "Large", value: "lg" }],
+        },
+        titleWeight: {
+          type: "select",
+          label: "Title weight",
+          options: [{ label: "Regular", value: "regular" }, { label: "Medium", value: "medium" }, { label: "Semi-bold", value: "semibold" }, { label: "Bold", value: "bold" }],
+        },
+        cardRadius: {
+          type: "select",
+          label: "Card radius",
+          options: [{ label: "None", value: "none" }, { label: "Small", value: "sm" }, { label: "Medium", value: "md" }, { label: "Large", value: "lg" }, { label: "XL", value: "xl" }],
+        },
+        shadow: {
+          type: "select",
+          label: "Card shadow",
+          options: [{ label: "None", value: "none" }, { label: "Small", value: "sm" }, { label: "Medium", value: "md" }, { label: "Large", value: "lg" }],
+        },
+        spacing: {
+          type: "select",
+          label: "Vertical spacing",
+          options: [{ label: "Compact", value: "sm" }, { label: "Comfortable", value: "md" }, { label: "Spacious", value: "lg" }],
+        },
+      },
+      defaultProps: {
+        categorySlug: "",
+        showProducts: true,
+        maxProducts: 4,
+        backgroundColor: "",
+        titleSize: "lg",
+        titleWeight: "bold",
+        cardRadius: "lg",
+        shadow: "none",
+        spacing: "md",
+      },
+      render: ({ categorySlug, showProducts, maxProducts, backgroundColor, titleSize, titleWeight, cardRadius, shadow, spacing }) => {
+        const data = getStorefrontData();
+        if (!data) return <></>;
+        const { store, categories, products } = data;
+        const theme = getThemeTokens(store);
+        const sectionBackground = normalizeOptionalColor(backgroundColor, "transparent");
+        const category = categories.find((c) => c.slug === categorySlug);
+        if (!category) {
+          return (
+            <section className={`px-4 ${resolveSectionPadding(spacing)}`} style={{ backgroundColor: sectionBackground }}>
+              <div className="mx-auto max-w-7xl">
+                <p className="py-12 text-center text-sm" style={{ color: theme.textMuted }}>
+                  {categorySlug ? `Category "${categorySlug}" not found.` : "Select a category in the editor panel."}
+                </p>
+              </div>
+            </section>
+          );
+        }
+        const categoryProducts = showProducts ? products.filter((p) => p.category?.slug === category.slug).slice(0, maxProducts) : [];
+        return (
+          <section className={`px-4 ${resolveSectionPadding(spacing)}`} style={{ backgroundColor: sectionBackground }}>
+            <div className="mx-auto max-w-7xl">
+              <div className="mb-8">
+                <h2 style={{ ...titleStyle(titleSize, titleWeight), color: theme.textPrimary }}>{category.name}</h2>
+                {category.description && (
+                  <p className="mt-3 max-w-2xl text-base" style={{ color: theme.textSecondary }}>{category.description}</p>
+                )}
+                <Link href={`/store/${store.slug}/categories/${category.slug}`} className="mt-4 inline-flex items-center gap-1 text-sm font-medium hover:opacity-80" style={{ color: theme.primary }}>
+                  {translatePuckText("View all")} <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+              {showProducts && categoryProducts.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+                  {categoryProducts.map((p) => (
+                    <ProductCard key={p.id} product={p} slug={store.slug} currency={store.currency} cardStyle="default" showBrand={false} showSaleBadge radius={cardRadius} shadow={shadow} />
+                  ))}
+                </div>
+              )}
             </div>
           </section>
         );
@@ -4753,6 +5122,17 @@ export function buildPuckConfig(
           },
         } as any,
       },
+      CategorySpotlight: {
+        ...puckConfig.components.CategorySpotlight,
+        fields: {
+          ...puckConfig.components.CategorySpotlight.fields,
+          categorySlug: {
+            type: "select",
+            label: "Category",
+            options: [{ label: "Select a category…", value: "" }, ...options.categoryOptions],
+          },
+        } as any,
+      },
     },
   };
 
@@ -4858,10 +5238,15 @@ export function getDefaultPuckData(lang: PuckEditorLang = "en"): Data {
         type: "StoreHeader",
         props: {
           id: "store-header-default",
-          eyebrow: "Built for your brand",
-          subtitle: "Use the builder to control the first impression of your storefront.",
-          ctaLabel: "Browse catalog",
-          ctaLink: "/products",
+          homeLabel: "Home",
+          productsLabel: "Products",
+          showCategories: true,
+          showCollections: true,
+          showPages: true,
+          showSearch: true,
+          showAuth: true,
+          showCart: true,
+          cartLabel: "Cart",
           showLogo: true,
         },
       },

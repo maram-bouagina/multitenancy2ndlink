@@ -37,8 +37,10 @@ export async function generateMetadata({
     }
 
     return {
-      title: category.name,
-      description: category.description || `Parcourez les produits de la catégorie ${category.name}.`,
+      title: category.meta_title || category.name,
+      description: category.meta_description || category.description || `Parcourez les produits de la catégorie ${category.name}.`,
+      ...(category.canonical_url ? { alternates: { canonical: category.canonical_url } } : {}),
+      ...(category.noindex ? { robots: { index: false, follow: true } } : {}),
     };
   } catch {
     return {
@@ -134,8 +136,25 @@ export default async function CategoryPage({
   // Subcategories
   const subcategories = category.children ?? [];
 
+  /* ── JSON-LD BreadcrumbList ──────────────────────────────────────── */
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || '';
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Accueil', item: `${baseUrl}/store/${slug}` },
+      { '@type': 'ListItem', position: 2, name: 'Produits', item: `${baseUrl}/store/${slug}/products` },
+      { '@type': 'ListItem', position: 3, name: category.name, item: `${baseUrl}/store/${slug}/categories/${category.slug}` },
+    ],
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      {/* JSON-LD */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm mb-8" style={{ color: 'var(--sf-text-muted)' }}>
         <Link href={`/store/${slug}`}>Accueil</Link>
@@ -146,12 +165,48 @@ export default async function CategoryPage({
       </nav>
 
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--sf-text-primary)' }}>{category.name}</h1>
-        {category.description && (
-          <p style={{ color: 'var(--sf-text-secondary)' }}>{category.description}</p>
-        )}
-        <p className="text-sm mt-2" style={{ color: 'var(--sf-text-muted)' }}>{total} produit{total !== 1 ? 's' : ''}</p>
+      <div className="mb-10 grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+        <div>
+          <p className="text-xs uppercase tracking-[0.24em]" style={{ color: 'var(--sf-text-muted)' }}>Catégorie</p>
+          <h1 className="mt-3 text-3xl font-bold" style={{ color: 'var(--sf-text-primary)' }}>{category.name}</h1>
+          {category.description && (
+            <p className="mt-3 max-w-2xl leading-7" style={{ color: 'var(--sf-text-secondary)' }}>{category.description}</p>
+          )}
+          <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
+            <span className="rounded-full px-4 py-2 font-medium" style={{ backgroundColor: 'var(--sf-surface-alt)', color: 'var(--sf-text-secondary)' }}>
+              {total} produit{total !== 1 ? 's' : ''}
+            </span>
+            {subcategories.length > 0 ? (
+              <span className="rounded-full px-4 py-2 font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--sf-primary) 10%, transparent)', color: 'var(--sf-primary)' }}>
+                {subcategories.length} sous-catégorie{subcategories.length > 1 ? 's' : ''}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="relative aspect-4/3 overflow-hidden rounded-[2rem] border" style={{ borderColor: 'var(--sf-border)', backgroundColor: 'var(--sf-surface-alt)' }}>
+          {category.image_url ? (
+            <Image
+              src={resolveMediaUrl(category.image_url)}
+              alt={category.name}
+              fill
+              className="object-cover"
+              unoptimized
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center" style={{ color: 'var(--sf-text-muted)' }}>
+              <Tag className="h-12 w-12" />
+            </div>
+          )}
+          <div
+            className="absolute inset-0"
+            style={{ background: 'linear-gradient(180deg, transparent 30%, color-mix(in srgb, var(--sf-surface) 78%, black)) 100%)' }}
+          />
+          <div className="absolute bottom-0 left-0 right-0 p-6">
+            <p className="text-xs uppercase tracking-[0.2em]" style={{ color: 'rgba(255,255,255,0.72)' }}>Parcours</p>
+            <p className="mt-2 text-lg font-semibold text-white">Explorez toute la sélection {category.name.toLowerCase()}</p>
+          </div>
+        </div>
       </div>
 
       {/* Subcategories */}

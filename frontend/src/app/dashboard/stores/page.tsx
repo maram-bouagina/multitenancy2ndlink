@@ -24,21 +24,37 @@ export default function StoresPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [languageFilter, setLanguageFilter] = useState('');
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const { data: stores, isLoading } = useStores(isAuthenticated);
   const deleteStoreMutation = useDeleteStore();
   const allStores = stores ?? [];
+  const languages = Array.from(new Set(allStores.map((store) => store.language).filter(Boolean))).sort();
   const filteredStores = allStores.filter((store) => {
     const query = search.trim().toLowerCase();
-    const matchesSearch = !query || store.name.toLowerCase().includes(query) || store.slug.toLowerCase().includes(query);
+    const searchHaystack = [
+      store.name,
+      store.slug,
+      store.email,
+      store.phone,
+      store.address,
+      store.currency,
+      store.language,
+      store.timezone,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    const matchesSearch = !query || searchHaystack.includes(query);
     const matchesStatus = !statusFilter || store.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesLanguage = !languageFilter || store.language === languageFilter;
+    return matchesSearch && matchesStatus && matchesLanguage;
   });
   const pageCount = Math.max(1, Math.ceil(filteredStores.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const paginatedStores = filteredStores.slice(pageStart, pageStart + PAGE_SIZE);
-  const currentPageIds = paginatedStores.map((store) => store.id);
+  const filteredStoreIds = filteredStores.map((store) => store.id);
   const validSelectedStoreIds = selectedStoreIds.filter((id) => allStores.some((store) => store.id === id));
 
   const handleSelectStore = (store: Store) => {
@@ -77,9 +93,9 @@ export default function StoresPage() {
   const toggleSelectAll = (checked: boolean) => {
     setSelectedStoreIds((current) => {
       if (checked) {
-        return Array.from(new Set([...current, ...currentPageIds]));
+        return Array.from(new Set([...current, ...filteredStoreIds]));
       }
-      return current.filter((id) => !currentPageIds.includes(id));
+      return current.filter((id) => !filteredStoreIds.includes(id));
     });
   };
 
@@ -118,7 +134,7 @@ export default function StoresPage() {
                     setPage(1);
                   }}
                   className="pl-9"
-                  placeholder="Search stores by name or slug..."
+                  placeholder="Search name, slug, email, phone, currency..."
                 />
               </div>
               <select
@@ -133,6 +149,19 @@ export default function StoresPage() {
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
                 <option value="suspended">Suspended</option>
+              </select>
+              <select
+                value={languageFilter}
+                onChange={(event) => {
+                  setLanguageFilter(event.target.value);
+                  setPage(1);
+                }}
+                className="h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              >
+                <option value="">All languages</option>
+                {languages.map((language) => (
+                  <option key={language} value={language}>{language.toUpperCase()}</option>
+                ))}
               </select>
             </div>
             <Button
@@ -153,7 +182,7 @@ export default function StoresPage() {
                   <TableHead className="w-10">
                     <input
                       type="checkbox"
-                      checked={currentPageIds.length > 0 && currentPageIds.every((id) => validSelectedStoreIds.includes(id))}
+                      checked={filteredStoreIds.length > 0 && filteredStoreIds.every((id) => validSelectedStoreIds.includes(id))}
                       onChange={(e) => toggleSelectAll(e.target.checked)}
                       aria-label="Select all stores"
                     />

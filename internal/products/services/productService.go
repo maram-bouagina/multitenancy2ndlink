@@ -97,9 +97,13 @@ func (s *productService) Create(db *gorm.DB, tenantID string, storeID uuid.UUID,
 		Stock:       req.Stock,
 		Weight:      req.Weight,
 		Dimensions:  req.Dimensions,
-		Brand:       req.Brand,
-		TaxClass:    req.TaxClass,
-		PublishedAt: req.PublishedAt,
+		Brand:           req.Brand,
+		TaxClass:        req.TaxClass,
+		MetaTitle:       req.MetaTitle,
+		MetaDescription: req.MetaDescription,
+		CanonicalURL:    req.CanonicalURL,
+		Noindex:         req.Noindex,
+		PublishedAt:     req.PublishedAt,
 	}
 
 	if err := s.repo.Create(db, product); err != nil {
@@ -228,6 +232,18 @@ func (s *productService) Update(db *gorm.DB, id, storeID uuid.UUID, req dto.Upda
 	}
 	if req.TaxClass != nil {
 		product.TaxClass = req.TaxClass
+	}
+	if req.MetaTitle != nil {
+		product.MetaTitle = req.MetaTitle
+	}
+	if req.MetaDescription != nil {
+		product.MetaDescription = req.MetaDescription
+	}
+	if req.CanonicalURL != nil {
+		product.CanonicalURL = req.CanonicalURL
+	}
+	if req.Noindex != nil {
+		product.Noindex = *req.Noindex
 	}
 	if req.PublishedAt != nil {
 		product.PublishedAt = req.PublishedAt
@@ -533,11 +549,15 @@ func toProductResponse(p *models.Product) *dto.ProductResponse {
 		Stock:       p.Stock,
 		Weight:      p.Weight,
 		Dimensions:  p.Dimensions,
-		Brand:       p.Brand,
-		TaxClass:    p.TaxClass,
-		PublishedAt: p.PublishedAt,
-		CreatedAt:   p.CreatedAt,
-		UpdatedAt:   p.UpdatedAt,
+		Brand:           p.Brand,
+		TaxClass:        p.TaxClass,
+		MetaTitle:       p.MetaTitle,
+		MetaDescription: p.MetaDescription,
+		CanonicalURL:    p.CanonicalURL,
+		Noindex:         p.Noindex,
+		PublishedAt:     p.PublishedAt,
+		CreatedAt:       p.CreatedAt,
+		UpdatedAt:       p.UpdatedAt,
 	}
 	if p.Category != nil {
 		cat := toCategoryResponse(p.Category)
@@ -561,15 +581,20 @@ func toProductResponse(p *models.Product) *dto.ProductResponse {
 // Transforme Category en CategoryResponse
 func toCategoryResponse(c *models.Category) dto.CategoryResponse {
 	resp := dto.CategoryResponse{
-		ID:          c.ID,
-		StoreID:     c.StoreID,
-		ParentID:    c.ParentID,
-		Name:        c.Name,
-		Slug:        c.Slug,
-		Description: c.Description,
-		Visibility:  c.Visibility,
-		CreatedAt:   c.CreatedAt,
-		UpdatedAt:   c.UpdatedAt,
+		ID:              c.ID,
+		StoreID:         c.StoreID,
+		ParentID:        c.ParentID,
+		Name:            c.Name,
+		Slug:            c.Slug,
+		Description:     c.Description,
+		MetaTitle:       c.MetaTitle,
+		MetaDescription: c.MetaDescription,
+		CanonicalURL:    c.CanonicalURL,
+		Noindex:         c.Noindex,
+		ImageURL:        c.ImageURL,
+		Visibility:      c.Visibility,
+		CreatedAt:       c.CreatedAt,
+		UpdatedAt:       c.UpdatedAt,
 	}
 	resp.Children = make([]dto.CategoryResponse, len(c.Children))
 	for i, ch := range c.Children {

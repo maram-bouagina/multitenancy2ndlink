@@ -17,4 +17,5 @@ func Register(app *fiber.App, db *gorm.DB) {
 	productroutes.RegisterProductRoutes(app, db)
 	storefrontroutes.Register(app)             // public storefront — no auth
 	customerroutes.RegisterCustomerRoutes(app) // customer auth + account
+
 }

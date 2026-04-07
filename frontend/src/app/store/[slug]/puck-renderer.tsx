@@ -15,13 +15,15 @@ import type {
   CategoryPublic,
   CollectionPublic,
 } from "@/lib/types/storefront";
-import { useEffect, useMemo } from "react";
+import type { StorefrontPageListItem } from "@/lib/api/storefront-client";
+import { useMemo } from "react";
 
 interface Props {
   store: StorePublic;
   products: ProductPublic[];
   categories: CategoryPublic[];
   collections: CollectionPublic[];
+  pages?: StorefrontPageListItem[];
   layoutOverride?: string;
 }
 
@@ -30,6 +32,7 @@ export function PuckStorefrontRenderer({
   products,
   categories,
   collections,
+  pages,
   layoutOverride,
 }: Props) {
   const config = useMemo(
@@ -37,14 +40,9 @@ export function PuckStorefrontRenderer({
     [categories, collections, products, store],
   );
 
-  useEffect(() => {
-    setStorefrontData({
-      store,
-      products,
-      categories,
-      collections,
-    } satisfies StorefrontData);
-  }, [categories, collections, products, store]);
+  // Call synchronously during render so getStorefrontData() returns data
+  // when Puck's Render executes component render functions.
+  setStorefrontData({ store, products, categories, collections, pages } satisfies StorefrontData);
 
   const data = useMemo(() => {
     let parsed: Data | null = null;
@@ -61,8 +59,19 @@ export function PuckStorefrontRenderer({
     }
 
     const lang = store.language === "ar" ? "ar" : store.language === "fr" ? "fr" : "en";
-    return parsed && parsed.content.length > 0 ? parsed : getDefaultPuckData(lang);
+    const full = parsed && parsed.content.length > 0 ? parsed : getDefaultPuckData(lang);
+
+    // Strip shell components — header/nav/footer are rendered by StorefrontView
+    const SHELL_TYPES = new Set(["StoreHeader", "StoreNavigation", "StoreFooter"]);
+    return {
+      ...full,
+      content: full.content.filter((item) => !SHELL_TYPES.has(item.type)),
+    };
   }, [layoutOverride, store.language, store.storefront_layout]);
 
-  return <Render config={config} data={data} />;
+  return (
+    <div data-puck-page>
+      <Render config={config} data={data} />
+    </div>
+  );
 }

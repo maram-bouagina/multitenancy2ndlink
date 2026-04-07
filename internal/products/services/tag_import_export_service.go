@@ -153,7 +153,7 @@ func applyTagRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*ImportResul
 			existing.Name = name
 			existing.Color = colorPtr
 			if err := db.Save(&existing).Error; err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: update failed: %s", lineNum, err))
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't update this tag. Please try again.", lineNum))
 				res.Skipped++
 				continue
 			}
@@ -167,13 +167,13 @@ func applyTagRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*ImportResul
 				Color:   colorPtr,
 			}
 			if err := db.Create(&tag).Error; err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: create failed: %s", lineNum, err))
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't save this tag. Please check for duplicate names and try again.", lineNum))
 				res.Skipped++
 				continue
 			}
 			res.Imported++
 		} else {
-			res.Errors = append(res.Errors, fmt.Sprintf("line %d: db error: %s", lineNum, err))
+			res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't read this row. Please review the file and try again.", lineNum))
 			res.Skipped++
 		}
 	}

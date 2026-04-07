@@ -34,6 +34,10 @@ const productSchema = z.object({
   dimensions: z.string().optional(),
   brand: z.string().optional(),
   tax_class: z.string().optional(),
+  meta_title: z.string().optional(),
+  meta_description: z.string().optional(),
+  canonical_url: z.string().url().optional().or(z.literal('')),
+  noindex: z.boolean().optional(),
   category_id: z.string().optional(),
 });
 
@@ -93,6 +97,10 @@ export default function NewProductPage() {
         dimensions: optionalString(data.dimensions),
         brand: optionalString(data.brand),
         tax_class: optionalString(data.tax_class),
+        meta_title: optionalString(data.meta_title),
+        meta_description: optionalString(data.meta_description),
+        canonical_url: optionalString(data.canonical_url),
+        noindex: data.noindex || false,
         category_id: optionalString(data.category_id),
         sale_price: optionalNumber(data.sale_price),
         weight: optionalNumber(data.weight),
@@ -251,6 +259,27 @@ export default function NewProductPage() {
                 <Label htmlFor="tax_class">{t.productForm.taxClass}</Label>
                 <Input id="tax_class" placeholder={t.productForm.taxClassPlaceholderCreate} {...register('tax_class')} />
                 {errors.tax_class && <p className="text-sm text-red-600">{errors.tax_class.message}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="meta_title">SEO Title</Label>
+                <Input id="meta_title" placeholder="Override page title for search engines" {...register('meta_title')} />
+              </div>
+
+              <div className="space-y-2 lg:col-span-2">
+                <Label htmlFor="meta_description">SEO Description</Label>
+                <Textarea id="meta_description" placeholder="Override meta description for search engines (150–160 chars recommended)" rows={2} {...register('meta_description')} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="canonical_url">Canonical URL</Label>
+                <Input id="canonical_url" type="url" placeholder="https://example.com/products/my-product" {...register('canonical_url')} />
+                {errors.canonical_url && <p className="text-sm text-red-600">{errors.canonical_url.message}</p>}
+              </div>
+
+              <div className="flex items-center space-x-2 pt-6">
+                <input id="noindex" type="checkbox" className="h-4 w-4 rounded border-gray-300" {...register('noindex')} />
+                <Label htmlFor="noindex">No Index (hide from search engines)</Label>
               </div>
 
               <div className="space-y-2">

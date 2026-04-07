@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { User, Shield, Bell, Globe } from 'lucide-react';
+import { User, Shield, Bell, Globe, Store, Check } from 'lucide-react';
 import { useLanguage } from '@/lib/hooks/use-language';
+import { useAuth } from '@/lib/hooks/use-auth';
 
 export default function SettingsPage() {
   const { t } = useLanguage();
+  const { currentStore, stores, setCurrentStore } = useAuth();
 
   const settingsItems = [
     {
@@ -76,6 +78,46 @@ export default function SettingsPage() {
           </Link>
         ))}
       </div>
+
+      {/* Store selector */}
+      {stores.length > 0 && (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">{t.header.yourStores}</h2>
+            <p className="text-sm text-gray-500">{t.settings.storeSelectDesc}</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {stores.map((store) => {
+              const isActive = currentStore?.id === store.id;
+              return (
+                <button
+                  key={store.id}
+                  type="button"
+                  onClick={() => setCurrentStore(store)}
+                  className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
+                    isActive
+                      ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                  }`}
+                >
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                    isActive ? 'bg-blue-100' : 'bg-gray-100'
+                  }`}>
+                    <Store className={`h-5 w-5 ${isActive ? 'text-blue-600' : 'text-gray-600'}`} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm font-medium truncate ${isActive ? 'text-blue-900' : 'text-gray-900'}`}>
+                      {store.name}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">{store.slug}</p>
+                  </div>
+                  {isActive && <Check className="h-5 w-5 shrink-0 text-blue-600" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

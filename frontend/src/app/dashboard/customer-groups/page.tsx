@@ -35,6 +35,8 @@ export default function CustomerGroupsPage() {
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [discountFilter, setDiscountFilter] = useState('');
+  const [memberFilter, setMemberFilter] = useState('');
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
@@ -49,14 +51,29 @@ export default function CustomerGroupsPage() {
   const allGroups = groups ?? [];
   const filteredGroups = allGroups.filter((group) => {
     const query = search.trim().toLowerCase();
-    if (!query) return true;
-    return group.name.toLowerCase().includes(query) || (group.description ?? '').toLowerCase().includes(query);
+    const searchHaystack = [
+      group.name,
+      group.description,
+      String(group.discount),
+      String(group.member_count),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    const matchesSearch = !query || searchHaystack.includes(query);
+    const matchesDiscount = !discountFilter
+      || (discountFilter === 'with-discount' && group.discount > 0)
+      || (discountFilter === 'no-discount' && group.discount <= 0);
+    const matchesMembers = !memberFilter
+      || (memberFilter === 'with-members' && group.member_count > 0)
+      || (memberFilter === 'empty' && group.member_count === 0);
+    return matchesSearch && matchesDiscount && matchesMembers;
   });
   const pageCount = Math.max(1, Math.ceil(filteredGroups.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const paginatedGroups = filteredGroups.slice(pageStart, pageStart + PAGE_SIZE);
-  const currentPageIds = paginatedGroups.map((group) => group.id);
+  const filteredGroupIds = filteredGroups.map((group) => group.id);
   const validSelectedGroupIds = selectedGroupIds.filter((id) => allGroups.some((group) => group.id === id));
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -101,9 +118,9 @@ export default function CustomerGroupsPage() {
   const toggleSelectAll = (checked: boolean) => {
     setSelectedGroupIds((current) => {
       if (checked) {
-        return Array.from(new Set([...current, ...currentPageIds]));
+        return Array.from(new Set([...current, ...filteredGroupIds]));
       }
-      return current.filter((id) => !currentPageIds.includes(id));
+      return current.filter((id) => !filteredGroupIds.includes(id));
     });
   };
 
@@ -249,7 +266,7 @@ export default function CustomerGroupsPage() {
         </CardHeader>
         <CardContent>
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="w-full max-w-sm">
+            <div className="flex w-full max-w-4xl flex-col gap-3 md:flex-row">
               <Input
                 value={search}
                 onChange={(event) => {
@@ -257,7 +274,32 @@ export default function CustomerGroupsPage() {
                   setPage(1);
                 }}
                 placeholder={t.customerGroupsPage.searchPlaceholderList}
+                className="md:flex-1"
               />
+              <select
+                value={discountFilter}
+                onChange={(event) => {
+                  setDiscountFilter(event.target.value);
+                  setPage(1);
+                }}
+                className="h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              >
+                <option value="">All discounts</option>
+                <option value="with-discount">With discount</option>
+                <option value="no-discount">No discount</option>
+              </select>
+              <select
+                value={memberFilter}
+                onChange={(event) => {
+                  setMemberFilter(event.target.value);
+                  setPage(1);
+                }}
+                className="h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              >
+                <option value="">All member states</option>
+                <option value="with-members">With members</option>
+                <option value="empty">Empty groups</option>
+              </select>
             </div>
             <Button
               variant="destructive"
@@ -277,7 +319,7 @@ export default function CustomerGroupsPage() {
                   <TableHead className="w-10">
                     <input
                       type="checkbox"
-                      checked={currentPageIds.length > 0 && currentPageIds.every((id) => validSelectedGroupIds.includes(id))}
+                      checked={filteredGroupIds.length > 0 && filteredGroupIds.every((id) => validSelectedGroupIds.includes(id))}
                       onChange={(e) => toggleSelectAll(e.target.checked)}
                       aria-label="Select all customer groups"
                     />

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -15,7 +16,10 @@ import (
 	"multitenancypfe/internal/products/models"
 )
 
-var collectionHeaders = []string{"id", "name", "slug", "type", "rule"}
+var collectionHeaders = []string{
+	"id", "name", "slug", "type", "rule",
+	"description", "meta_title", "meta_description", "canonical_url", "noindex", "image_url",
+}
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +109,22 @@ func collectionToRow(c models.Collection) []string {
 	if c.Rule != nil {
 		row[4] = *c.Rule
 	}
+	if c.Description != nil {
+		row[5] = *c.Description
+	}
+	if c.MetaTitle != nil {
+		row[6] = *c.MetaTitle
+	}
+	if c.MetaDescription != nil {
+		row[7] = *c.MetaDescription
+	}
+	if c.CanonicalURL != nil {
+		row[8] = *c.CanonicalURL
+	}
+	row[9] = strconv.FormatBool(c.Noindex)
+	if c.ImageURL != nil {
+		row[10] = *c.ImageURL
+	}
 	return row
 }
 
@@ -125,6 +145,7 @@ func applyCollectionRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*Impo
 	}
 
 	res := &ImportResult{}
+	seenSlugs := map[string]struct{}{}
 	for lineNo, row := range rows[1:] {
 		if len(row) == 0 {
 			continue
@@ -141,6 +162,8 @@ func applyCollectionRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*Impo
 		if slug == "" {
 			slug = generateSlug(name)
 		}
+		slug = ensureUniqueCollectionSlug(db, storeID, slug, seenSlugs)
+		seenSlugs[slug] = struct{}{}
 		colType := models.CollectionType(get(row, "type"))
 		if colType == "" {
 			colType = models.CollectionManual
@@ -150,6 +173,25 @@ func applyCollectionRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*Impo
 			rulePtr = &r
 		}
 
+		// SEO fields
+		var descPtr, metaTitlePtr, metaDescPtr, canonURLPtr, imgURLPtr *string
+		if v := get(row, "description"); v != "" {
+			descPtr = &v
+		}
+		if v := get(row, "meta_title"); v != "" {
+			metaTitlePtr = &v
+		}
+		if v := get(row, "meta_description"); v != "" {
+			metaDescPtr = &v
+		}
+		if v := get(row, "canonical_url"); v != "" {
+			canonURLPtr = &v
+		}
+		if v := get(row, "image_url"); v != "" {
+			imgURLPtr = &v
+		}
+		noindex := strings.EqualFold(get(row, "noindex"), "true")
+
 		// upsert by slug
 		var existing models.Collection
 		err := db.Where("store_id = ? AND slug = ?", storeID, slug).First(&existing).Error
@@ -157,31 +199,75 @@ func applyCollectionRows(db *gorm.DB, storeID uuid.UUID, rows [][]string) (*Impo
 			existing.Name = name
 			existing.Type = colType
 			existing.Rule = rulePtr
+			existing.Description = descPtr
+			existing.MetaTitle = metaTitlePtr
+			existing.MetaDescription = metaDescPtr
+			existing.CanonicalURL = canonURLPtr
+			existing.Noindex = noindex
+			existing.ImageURL = imgURLPtr
 			if err := db.Save(&existing).Error; err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: update failed: %s", lineNum, err))
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't update this collection. Please try again.", lineNum))
 				res.Skipped++
 				continue
 			}
 			res.Updated++
 		} else if errors.Is(err, gorm.ErrRecordNotFound) {
 			col := models.Collection{
-				ID:      uuid.New(),
-				StoreID: storeID,
-				Name:    name,
-				Slug:    slug,
-				Type:    colType,
-				Rule:    rulePtr,
+				ID:              uuid.New(),
+				StoreID:         storeID,
+				Name:            name,
+				Slug:            slug,
+				Type:            colType,
+				Rule:            rulePtr,
+				Description:     descPtr,
+				MetaTitle:       metaTitlePtr,
+				MetaDescription: metaDescPtr,
+				CanonicalURL:    canonURLPtr,
+				Noindex:         noindex,
+				ImageURL:        imgURLPtr,
 			}
 			if err := db.Create(&col).Error; err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: create failed: %s", lineNum, err))
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't save this collection. Please check the file and try again.", lineNum))
 				res.Skipped++
 				continue
 			}
 			res.Imported++
 		} else {
-			res.Errors = append(res.Errors, fmt.Sprintf("line %d: db error: %s", lineNum, err))
+			res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't read this row. Please review the file and try again.", lineNum))
 			res.Skipped++
 		}
+
 	}
 	return res, nil
+}
+
+func ensureUniqueCollectionSlug(db *gorm.DB, storeID uuid.UUID, slug string, seenSlugs map[string]struct{}) string {
+	base := slug
+	if base == "" {
+		base = "collection"
+	}
+
+	makeCandidate := func(n int) string {
+		if n <= 1 {
+			return base
+		}
+		return fmt.Sprintf("%s-%d", base, n)
+	}
+
+	for suffix := 1; ; suffix++ {
+		candidate := makeCandidate(suffix)
+		if seenSlugs != nil {
+			if _, ok := seenSlugs[candidate]; ok {
+				continue
+			}
+		}
+
+		var count int64
+		_ = db.Model(&models.Collection{}).
+			Where("store_id = ? AND slug = ?", storeID, candidate).
+			Count(&count).Error
+		if count == 0 {
+			return candidate
+		}
+	}
 }

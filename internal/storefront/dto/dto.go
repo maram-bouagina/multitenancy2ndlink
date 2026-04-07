@@ -22,17 +22,28 @@ type StorePublicResponse struct {
 }
 
 type CategoryPublicResponse struct {
-	ID          string                   `json:"id"`
-	Name        string                   `json:"name"`
-	Slug        string                   `json:"slug"`
-	Description *string                  `json:"description,omitempty"`
-	Children    []CategoryPublicResponse `json:"children,omitempty"`
+	ID              string                   `json:"id"`
+	Name            string                   `json:"name"`
+	Slug            string                   `json:"slug"`
+	Description     *string                  `json:"description,omitempty"`
+	MetaTitle       *string                  `json:"meta_title,omitempty"`
+	MetaDescription *string                  `json:"meta_description,omitempty"`
+	CanonicalURL    *string                  `json:"canonical_url,omitempty"`
+	Noindex         bool                     `json:"noindex"`
+	ImageURL        *string                  `json:"image_url,omitempty"`
+	Children        []CategoryPublicResponse `json:"children,omitempty"`
 }
 
 type CollectionPublicResponse struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	Slug            string  `json:"slug"`
+	Description     *string `json:"description,omitempty"`
+	MetaTitle       *string `json:"meta_title,omitempty"`
+	MetaDescription *string `json:"meta_description,omitempty"`
+	CanonicalURL    *string `json:"canonical_url,omitempty"`
+	Noindex         bool    `json:"noindex"`
+	ImageURL        *string `json:"image_url,omitempty"`
 }
 
 type ProductImagePublicResponse struct {
@@ -60,6 +71,10 @@ type ProductPublicResponse struct {
 	Weight            *float64                     `json:"weight,omitempty"`
 	Dimensions        *string                      `json:"dimensions,omitempty"`
 	TaxClass          *string                      `json:"tax_class,omitempty"`
+	MetaTitle         *string                      `json:"meta_title,omitempty"`
+	MetaDescription   *string                      `json:"meta_description,omitempty"`
+	CanonicalURL      *string                      `json:"canonical_url,omitempty"`
+	Noindex           bool                         `json:"noindex"`
 	TrackStock        bool                         `json:"track_stock"`
 	InStock           bool                         `json:"in_stock"`
 	Stock             int                          `json:"stock"`

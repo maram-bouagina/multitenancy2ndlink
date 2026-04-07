@@ -52,11 +52,17 @@ func (s *collectionService) Create(storeID uuid.UUID, req dto.CreateCollectionRe
 	}
 
 	col := &models.Collection{
-		StoreID: storeID,
-		Name:    req.Name,
-		Slug:    slug,
-		Type:    req.Type,
-		Rule:    req.Rule,
+		StoreID:         storeID,
+		Name:            req.Name,
+		Slug:            slug,
+		Type:            req.Type,
+		Rule:            req.Rule,
+		Description:     req.Description,
+		MetaTitle:       req.MetaTitle,
+		MetaDescription: req.MetaDescription,
+		CanonicalURL:    req.CanonicalURL,
+		Noindex:         req.Noindex,
+		ImageURL:        req.ImageURL,
 	}
 	if err := s.repo.Create(col); err != nil {
 		return nil, err
@@ -111,6 +117,24 @@ func (s *collectionService) Update(id, storeID uuid.UUID, req dto.UpdateCollecti
 	}
 	if req.Rule != nil {
 		col.Rule = req.Rule
+	}
+	if req.Description != nil {
+		col.Description = req.Description
+	}
+	if req.MetaTitle != nil {
+		col.MetaTitle = req.MetaTitle
+	}
+	if req.MetaDescription != nil {
+		col.MetaDescription = req.MetaDescription
+	}
+	if req.CanonicalURL != nil {
+		col.CanonicalURL = req.CanonicalURL
+	}
+	if req.Noindex != nil {
+		col.Noindex = *req.Noindex
+	}
+	if req.ImageURL != nil {
+		col.ImageURL = req.ImageURL
 	}
 
 	if col.Type == models.CollectionAutomatic && (col.Rule == nil || *col.Rule == "") {
@@ -211,13 +235,19 @@ func (s *collectionService) findOrFail(id, storeID uuid.UUID) (*models.Collectio
 
 func toCollectionResponse(c *models.Collection) dto.CollectionResponse {
 	return dto.CollectionResponse{
-		ID:        c.ID,
-		StoreID:   c.StoreID,
-		Name:      c.Name,
-		Slug:      c.Slug,
-		Type:      c.Type,
-		Rule:      c.Rule,
-		CreatedAt: c.CreatedAt,
-		UpdatedAt: c.UpdatedAt,
+		ID:              c.ID,
+		StoreID:         c.StoreID,
+		Name:            c.Name,
+		Slug:            c.Slug,
+		Type:            c.Type,
+		Rule:            c.Rule,
+		Description:     c.Description,
+		MetaTitle:       c.MetaTitle,
+		MetaDescription: c.MetaDescription,
+		CanonicalURL:    c.CanonicalURL,
+		Noindex:         c.Noindex,
+		ImageURL:        c.ImageURL,
+		CreatedAt:       c.CreatedAt,
+		UpdatedAt:       c.UpdatedAt,
 	}
 }

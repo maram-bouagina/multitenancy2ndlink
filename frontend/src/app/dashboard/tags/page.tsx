@@ -12,7 +12,7 @@ import { useTags, useDeleteTag } from '@/lib/hooks/use-api';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { apiClient } from '@/lib/api/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { Download, Edit, Search, Trash2, Upload } from 'lucide-react';
+import { Download, Edit, Eye, Search, Trash2, Upload } from 'lucide-react';
 
 export default function TagsPage() {
   const PAGE_SIZE = 10;
@@ -21,6 +21,7 @@ export default function TagsPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [colorFilter, setColorFilter] = useState('');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -34,8 +35,12 @@ export default function TagsPage() {
   const allTags = tags ?? [];
   const filteredTags = allTags.filter((tag) => {
     const query = search.trim().toLowerCase();
-    if (!query) return true;
-    return tag.name.toLowerCase().includes(query) || tag.slug.toLowerCase().includes(query);
+    const searchHaystack = [tag.name, tag.slug, tag.color].filter(Boolean).join(' ').toLowerCase();
+    const matchesSearch = !query || searchHaystack.includes(query);
+    const matchesColor = !colorFilter
+      || (colorFilter === 'with-color' && !!tag.color)
+      || (colorFilter === 'without-color' && !tag.color);
+    return matchesSearch && matchesColor;
   });
   const pageCount = Math.max(1, Math.ceil(filteredTags.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -273,17 +278,31 @@ export default function TagsPage() {
         </CardHeader>
         <CardContent>
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="relative w-full max-w-sm">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                value={search}
+            <div className="flex w-full max-w-2xl flex-col gap-3 md:flex-row">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Input
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(1);
+                  }}
+                  className="pl-9"
+                  placeholder="Search name, slug, or color..."
+                />
+              </div>
+              <select
+                value={colorFilter}
                 onChange={(event) => {
-                  setSearch(event.target.value);
+                  setColorFilter(event.target.value);
                   setPage(1);
                 }}
-                className="pl-9"
-                placeholder="Search tags by name or slug..."
-              />
+                className="h-10 rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              >
+                <option value="">All color states</option>
+                <option value="with-color">With color</option>
+                <option value="without-color">Without color</option>
+              </select>
             </div>
             <Button
               variant="destructive"
@@ -311,6 +330,7 @@ export default function TagsPage() {
                   </TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Slug</TableHead>
+                  <TableHead>Color</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -328,9 +348,25 @@ export default function TagsPage() {
                     <TableCell className="text-sm font-medium text-gray-900">{tag.name}</TableCell>
                     <TableCell className="text-sm text-gray-600">{tag.slug}</TableCell>
                     <TableCell>
+                      {tag.color ? (
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span className="inline-block h-4 w-4 rounded-full border" style={{ backgroundColor: tag.color }} />
+                          {tag.color}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400">No color</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" asChild>
-                          <Link href={`/dashboard/tags/${tag.id}`}>
+                          <Link href={`/dashboard/tags/${tag.id}/details`} prefetch={false}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            View
+                          </Link>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/dashboard/tags/${tag.id}`} prefetch={false}>
                             <Edit className="mr-2 h-4 w-4" />
                             Edit
                           </Link>
@@ -351,7 +387,7 @@ export default function TagsPage() {
                 ))}
                 {filteredTags.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="h-24 text-center">
+                    <TableCell colSpan={5} className="h-24 text-center">
                       {isLoading ? 'Loading tags...' : 'No tags found.'}
                     </TableCell>
                   </TableRow>

@@ -38,12 +38,17 @@ func (s *categoryService) Create(storeID uuid.UUID, req dto.CreateCategoryReques
 	}
 
 	c := &models.Category{
-		StoreID:     storeID,
-		ParentID:    req.ParentID,
-		Name:        req.Name,
-		Slug:        slug,
-		Description: req.Description,
-		Visibility:  req.Visibility,
+		StoreID:         storeID,
+		ParentID:        req.ParentID,
+		Name:            req.Name,
+		Slug:            slug,
+		Description:     req.Description,
+		MetaTitle:       req.MetaTitle,
+		MetaDescription: req.MetaDescription,
+		CanonicalURL:    req.CanonicalURL,
+		Noindex:         req.Noindex,
+		ImageURL:        req.ImageURL,
+		Visibility:      req.Visibility,
 	}
 
 	if err := s.repo.Create(c); err != nil {
@@ -100,6 +105,21 @@ func (s *categoryService) Update(id, storeID uuid.UUID, req dto.UpdateCategoryRe
 	}
 	if req.Description != nil {
 		c.Description = req.Description
+	}
+	if req.MetaTitle != nil {
+		c.MetaTitle = req.MetaTitle
+	}
+	if req.MetaDescription != nil {
+		c.MetaDescription = req.MetaDescription
+	}
+	if req.CanonicalURL != nil {
+		c.CanonicalURL = req.CanonicalURL
+	}
+	if req.Noindex != nil {
+		c.Noindex = *req.Noindex
+	}
+	if req.ImageURL != nil {
+		c.ImageURL = req.ImageURL
 	}
 	if req.Visibility != nil {
 		c.Visibility = *req.Visibility

@@ -52,3 +52,27 @@ export async function getCollectionProducts(
   });
   return res.data;
 }
+
+
+export interface StorefrontPagePublic {
+  slug: string
+  title: string
+  layout_published: string
+  meta_title?: string
+  meta_description?: string
+}
+
+export interface StorefrontPageListItem {
+  slug: string
+  title: string
+}
+
+export async function getStorePages(slug: string): Promise<StorefrontPageListItem[]> {
+  const res = await sf.get(`/api/public/stores/${slug}/pages`)
+  return res.data
+}
+
+export async function getStorefrontPage(slug: string, pageSlug: string): Promise<StorefrontPagePublic> {
+  const res = await sf.get(`/api/public/stores/${slug}/pages/${pageSlug}`)
+  return res.data
+}

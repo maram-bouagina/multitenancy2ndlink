@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -18,6 +19,7 @@ import (
 
 var categoryHeaders = []string{
 	"id", "name", "slug", "description", "visibility", "parent_id", "parent_slug",
+	"meta_title", "meta_description", "canonical_url", "noindex", "image_url",
 }
 
 // ── ExportCategoriesCSV ───────────────────────────────────────────────────────
@@ -124,6 +126,19 @@ func categoryToRow(c models.Category) []string {
 	row[4] = string(c.Visibility)
 	if c.ParentID != nil {
 		row[5] = c.ParentID.String()
+	}
+	if c.MetaTitle != nil {
+		row[7] = *c.MetaTitle
+	}
+	if c.MetaDescription != nil {
+		row[8] = *c.MetaDescription
+	}
+	if c.CanonicalURL != nil {
+		row[9] = *c.CanonicalURL
+	}
+	row[10] = strconv.FormatBool(c.Noindex)
+	if c.ImageURL != nil {
+		row[11] = *c.ImageURL
 	}
 	return row
 }
@@ -247,7 +262,7 @@ func applyCategoryRows(
 
 			found, err := findCategoryBySlug(db, storeID, slug)
 			if err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: db error: %s", lineNum, err))
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't read this category row. Please review the file and try again.", lineNum))
 				res.Skipped++
 				processed[rowIdx] = true
 				progressed = true
@@ -258,8 +273,21 @@ func applyCategoryRows(
 				found.Description = descPtr
 				found.Visibility = vis
 				found.ParentID = parentID
+				if v := get(row, "meta_title"); v != "" {
+					found.MetaTitle = &v
+				}
+				if v := get(row, "meta_description"); v != "" {
+					found.MetaDescription = &v
+				}
+				if v := get(row, "canonical_url"); v != "" {
+					found.CanonicalURL = &v
+				}
+				found.Noindex = strings.EqualFold(get(row, "noindex"), "true")
+				if v := get(row, "image_url"); v != "" {
+					found.ImageURL = &v
+				}
 				if err := r.Update(found); err != nil {
-					res.Errors = append(res.Errors, fmt.Sprintf("line %d: update failed: %s", lineNum, err))
+					res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't update this category. Please try again.", lineNum))
 					res.Skipped++
 					processed[rowIdx] = true
 					progressed = true
@@ -267,16 +295,34 @@ func applyCategoryRows(
 				}
 				res.Updated++
 			} else {
+				var metaTitlePtr, metaDescPtr, canonURLPtr, imgURLPtr *string
+				if v := get(row, "meta_title"); v != "" {
+					metaTitlePtr = &v
+				}
+				if v := get(row, "meta_description"); v != "" {
+					metaDescPtr = &v
+				}
+				if v := get(row, "canonical_url"); v != "" {
+					canonURLPtr = &v
+				}
+				if v := get(row, "image_url"); v != "" {
+					imgURLPtr = &v
+				}
 				cat := &models.Category{
-					StoreID:     storeID,
-					Name:        name,
-					Slug:        slug,
-					Description: descPtr,
-					Visibility:  vis,
-					ParentID:    parentID,
+					StoreID:         storeID,
+					Name:            name,
+					Slug:            slug,
+					Description:     descPtr,
+					Visibility:      vis,
+					ParentID:        parentID,
+					MetaTitle:       metaTitlePtr,
+					MetaDescription: metaDescPtr,
+					CanonicalURL:    canonURLPtr,
+					Noindex:         strings.EqualFold(get(row, "noindex"), "true"),
+					ImageURL:        imgURLPtr,
 				}
 				if err := r.Create(cat); err != nil {
-					res.Errors = append(res.Errors, fmt.Sprintf("line %d: create failed: %s", lineNum, err))
+					res.Errors = append(res.Errors, fmt.Sprintf("line %d: we couldn't save this category. Please check for duplicate names and try again.", lineNum))
 					res.Skipped++
 					processed[rowIdx] = true
 					progressed = true
@@ -299,11 +345,10 @@ func applyCategoryRows(
 			}
 			lineNum := rowIdx + 2
 			parentSlug := get(row, "parent_slug")
-			parentID := get(row, "parent_id")
 			if parentSlug != "" {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: parent_slug '%s' was not found in the import file or database", lineNum, parentSlug))
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: the parent category was not found. Please add it first or include it in the file.", lineNum))
 			} else {
-				res.Errors = append(res.Errors, fmt.Sprintf("line %d: parent_id '%s' was not found in the database", lineNum, parentID))
+				res.Errors = append(res.Errors, fmt.Sprintf("line %d: the parent category was not found. Please add it first or include it in the file.", lineNum))
 			}
 			res.Skipped++
 			processed[rowIdx] = true

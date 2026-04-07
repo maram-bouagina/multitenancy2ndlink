@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -20,6 +21,11 @@ const categorySchema = z.object({
   name: z.string().min(1, 'Name is required'),
   slug: z.string().optional(),
   description: z.string().optional(),
+  meta_title: z.string().optional(),
+  meta_description: z.string().optional(),
+  canonical_url: z.string().url().optional().or(z.literal('')),
+  noindex: z.boolean().optional(),
+  image_url: z.string().url().optional().or(z.literal('')),
   visibility: z.enum(['public', 'private']),
   parent_id: z.string().optional(),
 });
@@ -96,6 +102,33 @@ export default function NewCategoryPage() {
               <Label htmlFor="description">Description</Label>
               <Input id="description" placeholder="A descriptive summary" {...register('description')} />
               {errors.description && <p className="text-sm text-red-600">{errors.description.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="meta_title">SEO Title</Label>
+              <Input id="meta_title" placeholder="Override page title for search engines" {...register('meta_title')} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="meta_description">SEO Description</Label>
+              <Textarea id="meta_description" placeholder="Override meta description for search engines (150–160 chars recommended)" rows={2} {...register('meta_description')} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="canonical_url">Canonical URL</Label>
+              <Input id="canonical_url" type="url" placeholder="https://example.com/categories/my-category" {...register('canonical_url')} />
+              {errors.canonical_url && <p className="text-sm text-red-600">{errors.canonical_url.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="image_url">Category Image URL</Label>
+              <Input id="image_url" type="url" placeholder="https://..." {...register('image_url')} />
+              {errors.image_url && <p className="text-sm text-red-600">{errors.image_url.message}</p>}
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <input id="noindex" type="checkbox" className="h-4 w-4 rounded border-gray-300" {...register('noindex')} />
+              <Label htmlFor="noindex">No Index (hide from search engines)</Label>
             </div>
 
             <div className="space-y-2">

@@ -151,7 +151,7 @@ function StorefrontProductsFiltersForm({
             type="text"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Titre, marque…"
+            placeholder="Titre, slug, marque, sku…"
             className="w-full rounded-lg border pl-9 pr-10 py-2 text-sm outline-none"
             style={{ borderColor: 'var(--sf-border)', backgroundColor: 'var(--sf-surface)', color: 'var(--sf-text-primary)' }}
           />

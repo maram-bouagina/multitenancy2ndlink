@@ -149,9 +149,12 @@ export async function generateMetadata({
 
   try {
     const detail = await getProduct(slug, productSlug);
+    const p = detail.product;
     return {
-      title: detail.product.title,
-      description: detail.product.description?.slice(0, 160) ?? `Découvrez ${detail.product.title}.`,
+      title: p.meta_title || p.title,
+      description: p.meta_description || (p.description?.slice(0, 160) ?? `Découvrez ${p.title}.`),
+      ...(p.canonical_url ? { alternates: { canonical: p.canonical_url } } : {}),
+      ...(p.noindex ? { robots: { index: false, follow: true } } : {}),
     };
   } catch {
     return {
@@ -177,8 +180,33 @@ export default async function ProductDetailPage({
 
   const { product, related, upsell_products = [], cross_sell_products = [] } = detail;
 
+  /* ── JSON-LD structured data (schema.org/Product) ──────────────── */
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.title,
+    description: product.description || undefined,
+    sku: product.sku || undefined,
+    image: product.images?.map((img) => resolveMediaUrl(img.url)) || [],
+    ...(product.brand ? { brand: { '@type': 'Brand', name: product.brand } } : {}),
+    offers: {
+      '@type': 'Offer',
+      price: product.effective_price.toFixed(2),
+      priceCurrency: product.currency,
+      availability: product.in_stock
+        ? 'https://schema.org/InStock'
+        : 'https://schema.org/OutOfStock',
+      url: `${process.env.NEXT_PUBLIC_BASE_URL || ''}/store/${slug}/products/${product.slug}`,
+    },
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      {/* JSON-LD */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* ── Breadcrumb ─────────────────────────────────────────────────── */}
       <nav className="flex items-center gap-1.5 text-sm mb-8" style={{ color: 'var(--sf-text-muted)' }}>
         <Link href={`/store/${slug}`}>

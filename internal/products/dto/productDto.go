@@ -29,6 +29,10 @@ type CreateProductRequest struct {
 	Dimensions        *string                  `json:"dimensions"`
 	Brand             *string                  `json:"brand"`
 	TaxClass          *string                  `json:"tax_class"`
+	MetaTitle         *string                  `json:"meta_title"`
+	MetaDescription   *string                  `json:"meta_description"`
+	CanonicalURL      *string                  `json:"canonical_url" validate:"omitempty,url"`
+	Noindex           bool                     `json:"noindex"`
 	PublishedAt       *time.Time               `json:"published_at"`
 }
 
@@ -53,6 +57,10 @@ type UpdateProductRequest struct {
 	Dimensions        *string                   `json:"dimensions"`
 	Brand             *string                   `json:"brand"`
 	TaxClass          *string                   `json:"tax_class"`
+	MetaTitle         *string                   `json:"meta_title"`
+	MetaDescription   *string                   `json:"meta_description"`
+	CanonicalURL      *string                   `json:"canonical_url" validate:"omitempty,url"`
+	Noindex           *bool                     `json:"noindex"`
 	PublishedAt       *time.Time                `json:"published_at"`
 }
 
@@ -129,6 +137,10 @@ type ProductResponse struct {
 	Dimensions        *string                  `json:"dimensions,omitempty"`
 	Brand             *string                  `json:"brand,omitempty"`
 	TaxClass          *string                  `json:"tax_class,omitempty"`
+	MetaTitle         *string                  `json:"meta_title,omitempty"`
+	MetaDescription   *string                  `json:"meta_description,omitempty"`
+	CanonicalURL      *string                  `json:"canonical_url,omitempty"`
+	Noindex           bool                     `json:"noindex"`
 	PublishedAt       *time.Time               `json:"published_at,omitempty"`
 	CreatedAt         time.Time                `json:"created_at"`
 	UpdatedAt         time.Time                `json:"updated_at"`

@@ -1,8 +1,9 @@
 import { notFound } from 'next/navigation';
 import { StorefrontLanguageProvider } from '@/lib/hooks/use-storefront-language';
 import { StorefrontView } from '@/components/storefront/storefront-view';
-import { getStore, getCategories, getCollections } from '@/lib/api/storefront-client';
+import { getStore, getCategories, getCollections, getStorePages } from '@/lib/api/storefront-client';
 import type { StorePublic, CategoryPublic, CollectionPublic } from '@/lib/types/storefront';
+import type { StorefrontPageListItem } from '@/lib/api/storefront-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,12 +19,14 @@ export default async function StoreLayout({
   let store: StorePublic;
   let categories: CategoryPublic[] = [];
   let collections: CollectionPublic[] = [];
+  let pages: StorefrontPageListItem[] = [];
 
   try {
-    [store, categories, collections] = await Promise.all([
+    [store, categories, collections, pages] = await Promise.all([
       getStore(slug),
       getCategories(slug),
       getCollections(slug),
+      getStorePages(slug).catch(() => [] as StorefrontPageListItem[]),
     ]);
   } catch (err) {
     // Handle maintenance mode (503) distinctly from "not found" (404)
@@ -51,7 +54,7 @@ export default async function StoreLayout({
 
   return (
     <StorefrontLanguageProvider>
-      <StorefrontView store={store} categories={categories} collections={collections} slug={slug}>
+      <StorefrontView store={store} categories={categories} collections={collections} pages={pages} slug={slug}>
         {children}
       </StorefrontView>
     </StorefrontLanguageProvider>

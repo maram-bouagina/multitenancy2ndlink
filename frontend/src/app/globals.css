@@ -123,6 +123,7 @@
   body {
     @apply bg-background text-foreground;
   }
+
   html {
     @apply font-sans;
   }
@@ -141,4 +142,15 @@
 }
 .puck-Root > div {
   min-height: 0;
+}
+
+/* Hide Puck's built-in resize handles */
+[class*="ResizeHandle"] {
+  display: none !important;
+}
+
+/* Puck sidebar widths */
+[class*="PuckLayout-inner"] {
+  --puck-user-left-side-bar-width: 280px !important;
+  --puck-user-right-side-bar-width: 200px !important;
 }

@@ -11,7 +11,7 @@ type Tag struct {
 	ID        uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	StoreID   uuid.UUID  `gorm:"type:uuid;not null;index"                       json:"store_id"`
 	Name      string     `gorm:"type:varchar(255);not null"                     json:"name"`
-	Slug      string     `gorm:"type:varchar(255);uniqueIndex;not null"          json:"slug"`
+	Slug      string     `gorm:"type:varchar(255);not null;uniqueIndex:idx_tag_slug_store" json:"slug"`
 	Color     *string    `gorm:"type:varchar(7)"                                json:"color"`
 	CreatedAt time.Time  `gorm:"type:timestamptz;autoCreateTime"                json:"created_at"`
 	UpdatedAt time.Time  `gorm:"type:timestamptz;autoUpdateTime"                json:"updated_at"`

@@ -264,6 +264,21 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">{t.header.yourStores}</DropdownMenuLabel>
+                  {stores.map((store) => (
+                    <DropdownMenuItem
+                      key={store.id}
+                      onClick={() => setCurrentStore(store)}
+                      className="flex items-center justify-between"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Store className="h-3.5 w-3.5" />
+                        <span className="text-sm">{store.name}</span>
+                      </span>
+                      {currentStore?.id === store.id && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="me-2 h-4 w-4" />
                     <span>{t.header.logout}</span>

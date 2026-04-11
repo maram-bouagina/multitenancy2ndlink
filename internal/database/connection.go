@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"multitenancypfe/internal/auth/models"
 	"multitenancypfe/internal/config"
+	membershipModels "multitenancypfe/internal/membership/models"
 	sfModels "multitenancypfe/internal/storefront/models"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -29,7 +32,7 @@ type BetterAuthUser struct {
 	LastName         *string   `gorm:"column:lastName"`
 	Phone            *string   `gorm:"column:phone"`
 	Plan             *string   `gorm:"column:plan;default:free"`
-	Role             *string   `gorm:"column:role;default:merchant"`
+	Role             *string   `gorm:"column:role;default:staff"`
 	UserStatus       *string   `gorm:"column:userStatus;default:active"`
 	StoreID          *string   `gorm:"column:storeId"`
 	StoreSlug        *string   `gorm:"column:storeSlug"`
@@ -101,8 +104,16 @@ func Connect(cfg config.Config) error {
 		cfg.DBSSLMode,
 	)
 
-	var err error
-	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	// Use pgx v5 with SimpleProtocol to disable server-side prepared statements.
+	// This prevents "cached plan must not change result type" errors after schema migrations.
+	pgxCfg, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return fmt.Errorf("pgx parse config failed: %w", err)
+	}
+	pgxCfg.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	sqlDB := stdlib.OpenDB(*pgxCfg)
+
+	DB, err = gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
 	if err != nil {
 		return fmt.Errorf("postgres connection failed: %w", err)
 	}
@@ -120,6 +131,15 @@ func Connect(cfg config.Config) error {
 		&BetterAuthTwoFactor{},
 	); err != nil {
 		return fmt.Errorf("automigrate public schema failed: %w", err)
+	}
+
+	// AutoMigrate membership tables (cross-tenant) — order matters: roles before members
+	if err := DB.AutoMigrate(
+		&membershipModels.StoreRole{},
+		&membershipModels.StoreMember{},
+		&membershipModels.StoreInvitation{},
+	); err != nil {
+		return fmt.Errorf("automigrate membership tables failed: %w", err)
 	}
 
 	return nil

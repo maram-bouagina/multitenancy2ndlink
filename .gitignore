@@ -1,0 +1,13 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Common private key and certificate formats
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Local overrides
+*.local

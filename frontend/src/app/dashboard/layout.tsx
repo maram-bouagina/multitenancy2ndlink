@@ -22,30 +22,89 @@ import {
   FolderOpen,
   Settings,
   LogOut,
-  User,
   Users,
+  Users2,
   BarChart3,
   ChevronDown,
   Globe,
   Check,
   Database,
+  Shield,
+  User,
+  LayoutGrid,
 } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/use-auth';
+import { StaffPlatformWidget } from '@/components/dashboard/StaffPlatformWidget';
+import { QuickStoreSwitcher } from '@/components/dashboard/QuickStoreSwitcher';
 import { useLanguage } from '@/lib/hooks/use-language';
 import { type Lang } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-const NAV_ITEMS = [
-  { key: 'dashboard' as const, href: '/dashboard', icon: BarChart3 },
-  { key: 'stores' as const, href: '/dashboard/stores', icon: Store },
-  { key: 'products' as const, href: '/dashboard/products', icon: Package },
-  { key: 'categories' as const, href: '/dashboard/categories', icon: FolderOpen },
-  { key: 'collections' as const, href: '/dashboard/collections', icon: FolderOpen },
-  { key: 'tags' as const, href: '/dashboard/tags', icon: Tag },
-  { key: 'catalog' as const, href: '/dashboard/catalog', icon: Database },
-  { key: 'customers' as const, href: '/dashboard/customers', icon: Users },
-  { key: 'customerGroups' as const, href: '/dashboard/customer-groups', icon: Users },
-  { key: 'settings' as const, href: '/dashboard/settings', icon: Settings },
+const NAV_SECTIONS = [
+  {
+    key: 'home',
+    items: [
+      { key: 'dashboard' as const, href: '/dashboard', icon: BarChart3, permissions: [] as string[] },
+      { key: 'stores' as const, href: '/dashboard/stores', icon: Store, permissions: [] as string[] },
+      { key: 'space' as const, href: '/dashboard/space', icon: LayoutGrid, permissions: [] as string[] },
+    ],
+  },
+  {
+    key: 'catalog',
+    items: [
+      { key: 'products' as const, href: '/dashboard/products', icon: Package,
+        permissions: ['products:create', 'products:edit', 'products:delete', 'products:publish', 'products:import_export'] },
+      { key: 'categories' as const, href: '/dashboard/categories', icon: FolderOpen,
+        permissions: ['categories:manage'] },
+      { key: 'collections' as const, href: '/dashboard/collections', icon: FolderOpen,
+        permissions: ['collections:manage'] },
+      { key: 'tags' as const, href: '/dashboard/tags', icon: Tag,
+        permissions: ['tags:manage'] },
+      { key: 'catalog' as const, href: '/dashboard/catalog', icon: Database,
+        permissions: ['store:customization', 'store:pages'] },
+      { key: 'customers' as const, href: '/dashboard/customers', icon: Users,
+        permissions: ['customers:view', 'customers:edit', 'customers:delete', 'customers:import_export'] },
+      { key: 'customerGroups' as const, href: '/dashboard/customer-groups', icon: Users,
+        permissions: ['customers:view', 'customers:edit', 'customers:delete', 'customers:import_export'] },
+    ],
+  },
+  {
+    key: 'people',
+    items: [
+      { key: 'team' as const, href: '/dashboard/team', icon: Users2,
+        permissions: ['team:manage'] },
+      { key: 'roles' as const, href: '/dashboard/roles', icon: Shield,
+        permissions: ['team:manage'] },
+    ],
+  },
+  {
+    key: 'platform',
+    items: [
+      { key: 'settings' as const, href: '/dashboard/settings', icon: Settings,
+        permissions: [] as string[] },
+    ],
+  },
+];
+
+const PRODUCT_PERMISSIONS = ['products:create', 'products:edit', 'products:delete', 'products:publish', 'products:import_export'];
+const CUSTOMER_PERMISSIONS = ['customers:view', 'customers:edit', 'customers:delete', 'customers:import_export'];
+const STORE_BUILDER_PERMISSIONS = ['store:customization', 'store:pages'];
+
+const ROUTE_PERMISSION_RULES = [
+  { matches: (pathname: string) => pathname === '/dashboard/stores', ownerContextOnly: true },
+  { matches: (pathname: string) => pathname.startsWith('/dashboard/products'), permissions: PRODUCT_PERMISSIONS },
+  { matches: (pathname: string) => pathname.startsWith('/dashboard/categories'), permissions: ['categories:manage'] },
+  { matches: (pathname: string) => pathname.startsWith('/dashboard/collections'), permissions: ['collections:manage'] },
+  { matches: (pathname: string) => pathname.startsWith('/dashboard/tags'), permissions: ['tags:manage'] },
+  { matches: (pathname: string) => pathname.startsWith('/dashboard/catalog'), permissions: STORE_BUILDER_PERMISSIONS },
+  { matches: (pathname: string) => pathname.startsWith('/dashboard/customers'), permissions: CUSTOMER_PERMISSIONS },
+  { matches: (pathname: string) => pathname.startsWith('/dashboard/customer-groups'), permissions: CUSTOMER_PERMISSIONS },
+  { matches: (pathname: string) => pathname.startsWith('/dashboard/team'), permissions: ['team:manage'] },
+  { matches: (pathname: string) => pathname.startsWith('/dashboard/roles'), permissions: ['team:manage'] },
+  { matches: (pathname: string) => pathname === '/dashboard/stores/new', ownerContextOnly: true },
+  { matches: (pathname: string) => /^\/dashboard\/stores\/(?!new$)[^/]+$/.test(pathname), permissions: ['store:settings_edit'], sameStoreContext: true },
+  { matches: (pathname: string) => /^\/dashboard\/stores\/[^/]+\/(editor|customize|storefront|pages)/.test(pathname), permissions: STORE_BUILDER_PERMISSIONS, sameStoreContext: true },
+  { matches: (pathname: string) => pathname.startsWith('/dashboard/settings/plan'), merchantOnly: true },
 ];
 
 const LANG_OPTIONS: { code: Lang; flag: string; label: string }[] = [
@@ -64,27 +123,66 @@ interface NavItemsProps {
 
 function NavItems({ pathname }: NavItemsProps) {
   const { t } = useLanguage();
+  const { currentStore, selectedStaffStoreId, currentMemberPermissions, canUseTenantWorkspace, hasOwnedStoreAccess, myStores } = useAuth();
+  const canManageOwnedStores = canUseTenantWorkspace && !selectedStaffStoreId;
+
+  // A store must be explicitly selected (via Access button) before store-specific
+  // pages are accessible. Without one, only the picker + settings are shown.
+  const hasActiveStore = !!(currentStore || selectedStaffStoreId);
+
   return (
     <>
-      {NAV_ITEMS.map((item) => {
-        const isActive =
-          item.href === '/dashboard'
-            ? pathname === '/dashboard'
-            : pathname?.startsWith(item.href) ?? false;
+      {NAV_SECTIONS.map((section) => {
+        const visibleItems = section.items.filter((item) => {
+          // Always show the space picker ("stores" key), my spaces, and settings
+          const alwaysVisible = item.key === 'stores' || item.key === 'settings' || item.key === 'space';
+          if (!hasActiveStore && !alwaysVisible) return false;
+
+          // Permission filter (only applies when in staff mode)
+          if (currentMemberPermissions !== null && item.permissions.length > 0) {
+            return item.permissions.some((p) => currentMemberPermissions.includes(p));
+          }
+          return true;
+        });
+
+        if (visibleItems.length === 0) return null;
+
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-              isActive
-                ? 'bg-gray-100 text-gray-900'
-                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-            )}
-          >
-            <item.icon className="h-4 w-4" />
-            {t.nav[item.key]}
-          </Link>
+          <div key={section.key} className="space-y-2">
+            <p className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+              {t.navSections[section.key as keyof typeof t.navSections]}
+            </p>
+            <div className="space-y-1">
+              {visibleItems.map((item) => {
+                const href = item.key === 'stores'
+                  ? (canManageOwnedStores ? '/dashboard/stores' : '/dashboard/space')
+                  : item.href;
+                const isActive =
+                  item.href === '/dashboard'
+                    ? pathname === '/dashboard'
+                    : item.key === 'stores'
+                      ? (canManageOwnedStores
+                          ? pathname?.startsWith('/dashboard/stores') ?? false
+                          : pathname === '/dashboard/space')
+                      : pathname?.startsWith(item.href) ?? false;
+                return (
+                  <Link
+                    key={item.href}
+                    href={href}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {t.nav[item.key]}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
         );
       })}
     </>
@@ -94,8 +192,26 @@ function NavItems({ pathname }: NavItemsProps) {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, currentStore, stores, logout, setCurrentStore, isAuthenticated, isLoading } = useAuth();
+  const { user, currentStore, myStores, logout, isAuthenticated, isLoading, selectedStaffStoreId, currentMemberPermissions, canUseTenantWorkspace, hasOwnedStoreAccess } = useAuth();
   const { t, lang, setLang, dir } = useLanguage();
+  const canManageOwnedStores = canUseTenantWorkspace && !selectedStaffStoreId;
+  const activeStoreRouteId = pathname?.match(/^\/dashboard\/stores\/([^/]+)/)?.[1] ?? null;
+  const activeRouteRule = pathname ? ROUTE_PERMISSION_RULES.find((rule) => rule.matches(pathname)) : undefined;
+  const canAccessActiveRoute = (() => {
+    if (!activeRouteRule) return true;
+    if (activeRouteRule.merchantOnly) {
+      return canManageOwnedStores;
+    }
+    if (activeRouteRule.ownerContextOnly) {
+      return canManageOwnedStores;
+    }
+    if (activeRouteRule.sameStoreContext && selectedStaffStoreId && activeStoreRouteId && activeStoreRouteId !== selectedStaffStoreId) {
+      return false;
+    }
+    if (!activeRouteRule.permissions || activeRouteRule.permissions.length === 0) return true;
+    if (currentMemberPermissions === null) return true;
+    return activeRouteRule.permissions.some((permission) => currentMemberPermissions.includes(permission));
+  })();
 
   useEffect(() => {
     document.documentElement.dir = dir;
@@ -103,12 +219,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }, [dir, lang]);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    // The invite page handles its own auth flow (register / sign-in) — never
+    // redirect it to the login page.
+    const isInvitePage = pathname?.startsWith('/dashboard/invite/');
+    const canOpenWithoutActiveStore =
+      pathname === '/dashboard/space'
+      || pathname?.startsWith('/dashboard/invite/')
+      || pathname?.startsWith('/dashboard/settings')
+      || (canManageOwnedStores && pathname?.startsWith('/dashboard/stores'));
+
+    if (!isLoading && !isAuthenticated && !isInvitePage) {
       router.push('/auth/login');
-    } else if (!isLoading && isAuthenticated && !currentStore) {
-      router.push('/dashboard/stores');
+    } else if (!isLoading && isAuthenticated && !canAccessActiveRoute) {
+      router.replace('/dashboard/settings');
+    } else if (!isLoading && isAuthenticated && !currentStore && !selectedStaffStoreId && !canOpenWithoutActiveStore) {
+      // No active store context — always send everyone to Staff Space
+      if (pathname !== '/dashboard/space') router.push('/dashboard/space');
     }
-  }, [isAuthenticated, isLoading, currentStore, router]);
+  }, [canAccessActiveRoute, canManageOwnedStores, isAuthenticated, isLoading, currentStore, selectedStaffStoreId, myStores.length, pathname, router]);
 
   const handleLogout = () => {
     logout();
@@ -166,7 +294,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="sticky top-0 z-10 flex h-16 shrink-0 border-b bg-white shadow">
           <div className="flex flex-1 justify-between px-4 sm:px-6 lg:px-8">
             <div className="flex flex-1">
-              <div className="flex w-full md:ml-0">
+              <div className="flex w-full items-center justify-between md:ml-0">
                 <label htmlFor="search-field" className="sr-only">
                   Search
                 </label>
@@ -175,36 +303,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     {/* Search icon would go here */}
                   </div>
                 </div>
+                {currentStore && (
+                  <QuickStoreSwitcher />
+                )}
               </div>
             </div>
             <div className="ms-4 flex items-center md:ms-6">
-              {/* Store Selector */}
-              {currentStore && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="me-4 flex items-center gap-2">
-                      <Store className="h-4 w-4" />
-                      <span className="hidden sm:inline">{currentStore.name}</span>
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>{t.header.yourStores}</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {stores.map((store) => (
-                      <DropdownMenuItem
-                        key={store.id}
-                        onClick={() => setCurrentStore(store)}
-                        className={store.id === currentStore.id ? 'bg-gray-100' : ''}
-                      >
-                        <Store className="me-2 h-4 w-4" />
-                        {store.name}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-
               {/* Language Switcher */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -264,21 +368,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-xs text-muted-foreground">{t.header.yourStores}</DropdownMenuLabel>
-                  {stores.map((store) => (
-                    <DropdownMenuItem
-                      key={store.id}
-                      onClick={() => setCurrentStore(store)}
-                      className="flex items-center justify-between"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Store className="h-3.5 w-3.5" />
-                        <span className="text-sm">{store.name}</span>
-                      </span>
-                      {currentStore?.id === store.id && <Check className="h-3.5 w-3.5 text-blue-600" />}
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="me-2 h-4 w-4" />
                     <span>{t.header.logout}</span>
@@ -293,7 +382,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <main className="flex-1">
           <div className="py-6">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
-              {children}
+              {selectedStaffStoreId && (
+                <div className="mb-4">
+                  <StaffPlatformWidget />
+                </div>
+              )}
+              {!isLoading && isAuthenticated && !canAccessActiveRoute ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-900">
+                  <h2 className="text-lg font-semibold">Access limited by your role</h2>
+                  <p className="mt-2 text-sm text-amber-800">
+                    This page needs permissions your current role does not have. Open Settings to switch context or use areas that match your role.
+                  </p>
+                  <div className="mt-4">
+                    <Button asChild>
+                      <Link href="/dashboard/settings">Open Settings</Link>
+                    </Button>
+                  </div>
+                </div>
+              ) : children}
             </div>
           </div>
         </main>

@@ -422,3 +422,129 @@ export interface UpdatePageRequest {
   meta_title?: string
   meta_description?: string
 }
+
+// ── RBAC Permissions ─────────────────────────────────────────────────────────
+
+export const ALL_PERMISSIONS = [
+  'products:create',
+  'products:edit',
+  'products:delete',
+  'products:publish',
+  'products:import_export',
+  'categories:manage',
+  'collections:manage',
+  'tags:manage',
+  'customers:view',
+  'customers:edit',
+  'customers:delete',
+  'customers:import_export',
+  'store:settings_edit',
+  'store:media_upload',
+  'store:customization',
+  'store:pages',
+  'store:publish',
+  'team:manage',
+] as const;
+
+export type Permission = typeof ALL_PERMISSIONS[number];
+
+export const PERMISSION_GROUPS: Record<string, Permission[]> = {
+  Products: ['products:create', 'products:edit', 'products:delete', 'products:publish', 'products:import_export'],
+  Categories: ['categories:manage'],
+  Collections: ['collections:manage'],
+  Tags: ['tags:manage'],
+  Customers: ['customers:view', 'customers:edit', 'customers:delete', 'customers:import_export'],
+  Store: ['store:settings_edit', 'store:media_upload', 'store:customization', 'store:pages', 'store:publish'],
+  Team: ['team:manage'],
+};
+
+export interface StoreRole {
+  id: string;
+  store_id: string;
+  name: string;
+  description: string;
+  permissions: Permission[];
+  is_system: boolean;
+  member_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateRoleRequest {
+  name: string;
+  description?: string;
+  permissions: Permission[];
+}
+
+export interface UpdateRoleRequest {
+  name?: string;
+  description?: string;
+  permissions?: Permission[];
+}
+
+// ── Membership ──────────────────────────────────────────────────────────────
+
+export type MemberRole = 'owner' | 'designer' | 'editor' | 'viewer';
+export type InvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
+
+export interface StoreMember {
+  id: string;
+  store_id: string;
+  user_id: string;
+  email: string;
+  name: string;
+  display_name: string;
+  phone: string;
+  bio: string;
+  tenant_id: string;
+  role: MemberRole;
+  store_role_id?: string;
+  store_role?: StoreRole;
+  permissions: Permission[];
+  created_at: string;
+}
+
+export interface StoreInvitation {
+  id: string;
+  store_id: string;
+  email: string;
+  role: MemberRole;
+  store_role_id?: string;
+  store_role?: StoreRole;
+  status: InvitationStatus;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface CreateInvitationRequest {
+  email: string;
+  role: 'designer' | 'editor' | 'viewer';
+  store_role_id?: string;
+}
+
+export interface UpdateMemberRoleRequest {
+  role: 'designer' | 'editor' | 'viewer';
+  store_role_id?: string | null;
+}
+
+// ── Staff / multi-store ───────────────────────────────────────────────────────
+
+export interface StoreWithRole {
+  id: string;
+  name: string;
+  slug: string;
+  logo: string | null;
+  role: string;
+  currency: string;
+  theme_primary_color: string;
+  display_name: string;
+  store_role_name: string;
+  owner_name: string;
+  permissions: string[];
+}
+
+export interface AcceptInvitationWithProfileRequest {
+  display_name: string;
+  phone: string;
+  bio: string;
+}

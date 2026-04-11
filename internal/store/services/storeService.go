@@ -7,6 +7,8 @@ import (
 	"gorm.io/gorm"
 
 	authRepo "multitenancypfe/internal/auth/repo"
+	"multitenancypfe/internal/database"
+	membershipModels "multitenancypfe/internal/membership/models"
 	"multitenancypfe/internal/store/dto"
 	"multitenancypfe/internal/store/models"
 	"multitenancypfe/internal/store/repo"
@@ -104,6 +106,20 @@ func (s *storeService) Create(db *gorm.DB, tenantID string, req dto.CreateStoreR
 		return nil, err
 	}
 	s.seedDefaultPages(db, store.ID)
+
+	// Create owner membership entry in public.store_members
+	ownerMembership := &membershipModels.StoreMember{
+		StoreID:  store.ID,
+		UserID:   tenantID, // The creator is the owner
+		TenantID: tenantID, // Owner's tenant_id (same as userID)
+		Role:     "owner",
+	}
+	if err := database.DB.Create(ownerMembership).Error; err != nil {
+		// Log error but don't fail store creation (backward compatibility)
+		// In production, you might want to wrap this in a transaction
+		_ = err
+	}
+
 	// Register slug in the public routing index (best-effort; non-blocking)
 	_ = sfRepo.UpsertSlug(store.Slug, store.TenantID, store.ID, store.Status)
 	return toStoreResponse(store), nil

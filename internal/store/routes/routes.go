@@ -8,6 +8,7 @@ import (
 
 	authRepo "multitenancypfe/internal/auth/repo"
 	"multitenancypfe/internal/media"
+	membershipModels "multitenancypfe/internal/membership/models"
 	"multitenancypfe/internal/middleware"
 	storeHandlers "multitenancypfe/internal/store/handlers"
 	"multitenancypfe/internal/store/repo"
@@ -32,21 +33,21 @@ func RegisterStoreRoutes(app *fiber.App, db *gorm.DB) {
 		middleware.TenantDB(),
 	)
 	// Store routes (inchangées)
-	g.Post("/", h.Create)
-	g.Get("/", h.GetAll)
-	g.Get("/:id", h.GetByID)
-	g.Put("/:id", h.Update)
-	g.Patch("/:id/status", h.UpdateStatus)
-	g.Post("/:id/logo", h.UploadLogo)
-	g.Post("/:id/media", h.UploadMedia)
-	g.Post("/:id/customization/publish", h.PublishCustomization)
-	g.Delete("/:id", h.Delete)
+	g.Post("/", middleware.RequireOwnerContext(), h.Create)
+	g.Get("/", middleware.RequireOwnerContext(), h.GetAll)
+	g.Get("/:id", middleware.EnsureStoreContextMatches("id"), middleware.RequirePermission(membershipModels.PermStoreSettingsEdit), h.GetByID)
+	g.Put("/:id", middleware.EnsureStoreContextMatches("id"), middleware.RequirePermission(membershipModels.PermStoreSettingsEdit), h.Update)
+	g.Patch("/:id/status", middleware.EnsureStoreContextMatches("id"), middleware.RequirePermission(membershipModels.PermStorePublish), h.UpdateStatus)
+	g.Post("/:id/logo", middleware.EnsureStoreContextMatches("id"), middleware.RequirePermission(membershipModels.PermStoreMediaUpload), h.UploadLogo)
+	g.Post("/:id/media", middleware.EnsureStoreContextMatches("id"), middleware.RequirePermission(membershipModels.PermStoreMediaUpload), h.UploadMedia)
+	g.Post("/:id/customization/publish", middleware.EnsureStoreContextMatches("id"), middleware.RequirePermission(membershipModels.PermStorePublish), h.PublishCustomization)
+	g.Delete("/:id", middleware.EnsureStoreContextMatches("id"), middleware.RequireOwnerContext(), h.Delete)
 
 	// Page routes
-	g.Get("/:storeId/pages", ph.List)
-	g.Post("/:storeId/pages", ph.Create)
-	g.Get("/:storeId/pages/:pageId", ph.GetByID)
-	g.Put("/:storeId/pages/:pageId", ph.Update)
-	g.Post("/:storeId/pages/:pageId/publish", ph.Publish)
-	g.Delete("/:storeId/pages/:pageId", ph.Delete)
+	g.Get("/:storeId/pages", middleware.EnsureStoreContextMatches("storeId"), middleware.RequireAnyPermission(membershipModels.PermStorePages, membershipModels.PermStoreCustomization), ph.List)
+	g.Post("/:storeId/pages", middleware.EnsureStoreContextMatches("storeId"), middleware.RequirePermission(membershipModels.PermStorePages), ph.Create)
+	g.Get("/:storeId/pages/:pageId", middleware.EnsureStoreContextMatches("storeId"), middleware.RequireAnyPermission(membershipModels.PermStorePages, membershipModels.PermStoreCustomization), ph.GetByID)
+	g.Put("/:storeId/pages/:pageId", middleware.EnsureStoreContextMatches("storeId"), middleware.RequirePermission(membershipModels.PermStorePages), ph.Update)
+	g.Post("/:storeId/pages/:pageId/publish", middleware.EnsureStoreContextMatches("storeId"), middleware.RequirePermission(membershipModels.PermStorePublish), ph.Publish)
+	g.Delete("/:storeId/pages/:pageId", middleware.EnsureStoreContextMatches("storeId"), middleware.RequirePermission(membershipModels.PermStorePages), ph.Delete)
 }

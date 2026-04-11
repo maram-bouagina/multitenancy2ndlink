@@ -30,6 +30,15 @@ import {
   CreatePageRequest,
   StorefrontPage,
   UpdatePageRequest,
+  StoreMember,
+  StoreInvitation,
+  CreateInvitationRequest,
+  UpdateMemberRoleRequest,
+  StoreRole,
+  CreateRoleRequest,
+  UpdateRoleRequest,
+  StoreWithRole,
+  AcceptInvitationWithProfileRequest,
 } from '@/lib/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -55,6 +64,14 @@ class ApiClient {
       this.client.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     } else {
       delete this.client.defaults.headers.common['Authorization'];
+    }
+  }
+
+  setStoreId(storeId: string | null) {
+    if (storeId) {
+      this.client.defaults.headers.common['X-Store-Id'] = storeId;
+    } else {
+      delete this.client.defaults.headers.common['X-Store-Id'];
     }
   }
 
@@ -588,6 +605,112 @@ async publishPage(storeId: string, pageId: string): Promise<StorefrontPage> {
 
 async deletePage(storeId: string, pageId: string): Promise<void> {
   await this.client.delete(`/api/stores/${storeId}/pages/${pageId}`)
+}
+
+// ── Membership ──────────────────────────────────────────────────────────────
+
+async getStoreMembers(storeId: string): Promise<{ members: StoreMember[] }> {
+  const r = await this.client.get(`/api/stores/${storeId}/members`);
+  return r.data;
+}
+
+async createInvitation(storeId: string, data: CreateInvitationRequest): Promise<{ invitation: StoreInvitation }> {
+  const r = await this.client.post(`/api/stores/${storeId}/invitations`, data);
+  return r.data;
+}
+
+async getStoreInvitations(storeId: string): Promise<{ invitations: StoreInvitation[] }> {
+  const r = await this.client.get(`/api/stores/${storeId}/invitations`);
+  return r.data;
+}
+
+async revokeInvitation(invitationId: string): Promise<void> {
+  await this.client.delete(`/api/invitations/${invitationId}`);
+}
+
+async updateMemberRole(storeId: string, memberId: string, data: UpdateMemberRoleRequest): Promise<void> {
+  await this.client.patch(`/api/stores/${storeId}/members/${memberId}/role`, data);
+}
+
+// ── Roles ────────────────────────────────────────────────────────────────────
+
+async getStoreRoles(storeId: string): Promise<{ roles: StoreRole[] }> {
+  const r = await this.client.get(`/api/stores/${storeId}/roles`);
+  return r.data;
+}
+
+async createRole(storeId: string, data: CreateRoleRequest): Promise<{ role: StoreRole }> {
+  const r = await this.client.post(`/api/stores/${storeId}/roles`, data);
+  return r.data;
+}
+
+async updateRole(storeId: string, roleId: string, data: UpdateRoleRequest): Promise<{ role: StoreRole }> {
+  const r = await this.client.put(`/api/stores/${storeId}/roles/${roleId}`, data);
+  return r.data;
+}
+
+async deleteRole(storeId: string, roleId: string): Promise<void> {
+  await this.client.delete(`/api/stores/${storeId}/roles/${roleId}`);
+}
+
+async getAllPermissions(): Promise<{ permissions: string[] }> {
+  const r = await this.client.get('/api/permissions');
+  return r.data;
+}
+
+async removeMember(storeId: string, memberId: string): Promise<void> {
+  await this.client.delete(`/api/stores/${storeId}/members/${memberId}`);
+}
+
+async acceptInvitation(token: string, profile?: AcceptInvitationWithProfileRequest): Promise<{ message: string; store_id: string }> {
+  const r = await this.client.post(`/api/invitations/${token}/accept`, profile ?? {});
+  return r.data;
+}
+
+async verifyEmailViaInvitation(token: string): Promise<void> {
+  // Public endpoint — use fetch to bypass auth interceptors
+  await fetch(`${API_BASE_URL}/api/invitations/${token}/verify-email`, { method: 'POST' });
+}
+
+async getMyStores(): Promise<{ stores: StoreWithRole[] }> {
+  const r = await this.client.get('/api/user/stores');
+  return r.data;
+}
+
+async getAccountContext(): Promise<{
+  role: string;
+  has_tenant_workspace: boolean;
+  has_owned_store_access: boolean;
+}> {
+  const r = await this.client.get('/api/user/account-context');
+  return r.data;
+}
+
+async getInvitationPreview(token: string): Promise<{
+  email: string;
+  role: string;
+  role_name: string;
+  role_description: string;
+  store_name: string;
+  inviter_name: string;
+  expires_at: string;
+  status: string;
+  user_exists: boolean;
+}> {
+  // Public endpoint — no auth cookie needed. Use fetch to avoid axios
+  // interceptors that attach store/auth headers.
+  const res = await fetch(`${API_BASE_URL}/api/invitations/${token}`);
+  if (!res.ok) throw new Error('Invitation not found or expired');
+  return res.json();
+}
+
+async upgradeToMerchant(): Promise<void> {
+  await this.client.post('/api/user/upgrade');
+}
+
+/** ⚠ TEMPORARY – dev/testing only. Permanently deletes all platform data for the current user. */
+async deleteOwnAccount(): Promise<void> {
+  await this.client.delete('/api/user/account');
 }
 }
 

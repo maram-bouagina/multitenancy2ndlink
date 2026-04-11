@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -19,14 +19,20 @@ import { Search, Settings2, Palette, Trash2 } from 'lucide-react';
 export default function StoresPage() {
   const PAGE_SIZE = 10;
   const router = useRouter();
-  const { currentStore, setCurrentStore, isAuthenticated, refreshStores } = useAuth();
+  const { currentStore, setCurrentStore, isAuthenticated, refreshStores, isStaff, myStores, canUseTenantWorkspace, hasOwnedStoreAccess, selectedStaffStoreId } = useAuth();
+  const canManageOwnedStores = canUseTenantWorkspace && !selectedStaffStoreId;
+
+  // Staff-context users must return to My Spaces before accessing owner store management.
+  useEffect(() => {
+    if (!canManageOwnedStores && (isStaff || myStores.length > 0)) router.replace('/dashboard/space');
+  }, [canManageOwnedStores, isStaff, myStores.length, router]);
   const { t } = useLanguage();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [languageFilter, setLanguageFilter] = useState('');
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
-  const { data: stores, isLoading } = useStores(isAuthenticated);
+  const { data: stores, isLoading } = useStores(isAuthenticated && canManageOwnedStores);
   const deleteStoreMutation = useDeleteStore();
   const allStores = stores ?? [];
   const languages = Array.from(new Set(allStores.map((store) => store.language).filter(Boolean))).sort();

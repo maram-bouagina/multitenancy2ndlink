@@ -21,10 +21,10 @@ func RequireAuth() fiber.Handler {
 		// ── 1. Better Auth session ──────────────────────────────────
 		sessionToken := strings.TrimSpace(c.Cookies("better-auth.session_token"))
 		if sessionToken != "" {
-			userID, err := validateBetterAuthSession(sessionToken)
+			userID, role, err := validateBetterAuthSession(sessionToken)
 			if err == nil && userID != "" {
 				c.Locals("userID", userID)
-				c.Locals("role", "merchant")
+				c.Locals("role", role)
 				return c.Next()
 			}
 		}
@@ -35,10 +35,10 @@ func RequireAuth() fiber.Handler {
 			bearerToken = strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 		}
 		if bearerToken != "" {
-			userID, err := validateBetterAuthSession(bearerToken)
+			userID, role, err := validateBetterAuthSession(bearerToken)
 			if err == nil && userID != "" {
 				c.Locals("userID", userID)
-				c.Locals("role", "merchant")
+				c.Locals("role", role)
 				return c.Next()
 			}
 		}
@@ -67,26 +67,36 @@ func RequireAuth() fiber.Handler {
 
 // validateBetterAuthSession queries the Better Auth "session" table in the
 // public schema to check that the token is valid and not expired.
-// Returns the user ID on success.
-func validateBetterAuthSession(token string) (string, error) {
+// Returns the user ID and role on success.
+func validateBetterAuthSession(token string) (string, string, error) {
 	var result struct {
 		UserID    string    `gorm:"column:userId"`
+		Role      *string   `gorm:"column:role"`
 		ExpiresAt time.Time `gorm:"column:expiresAt"`
 	}
 
 	err := database.DB.Raw(
-		`SELECT "userId", "expiresAt" FROM public.session WHERE token = ? LIMIT 1`,
+		`SELECT s."userId", s."expiresAt", u."role"
+		 FROM public.session s
+		 JOIN public."user" u ON u.id = s."userId"
+		 WHERE s.token = ?
+		 LIMIT 1`,
 		token,
 	).Scan(&result).Error
 
 	if err != nil || result.UserID == "" {
-		return "", err
+		return "", "", err
 	}
 	if result.ExpiresAt.Before(time.Now()) {
-		return "", nil
+		return "", "", nil
 	}
 
-	return result.UserID, nil
+	role := "staff"
+	if result.Role != nil && strings.TrimSpace(*result.Role) != "" {
+		role = *result.Role
+	}
+
+	return result.UserID, role, nil
 }
 
 // getBetterAuthSessionToken extracts the Better Auth session token from
@@ -111,7 +121,7 @@ func RequireCustomerBetterAuth() fiber.Handler {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "not authenticated"})
 		}
 
-		userID, err := validateBetterAuthSession(token)
+		userID, _, err := validateBetterAuthSession(token)
 		if err != nil || userID == "" {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid session"})
 		}

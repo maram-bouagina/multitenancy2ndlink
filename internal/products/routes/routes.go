@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"multitenancypfe/internal/media"
+	membershipModels "multitenancypfe/internal/membership/models"
 	"multitenancypfe/internal/middleware"
 	"multitenancypfe/internal/products/handlers"
 	"multitenancypfe/internal/products/repo"
@@ -33,6 +34,7 @@ func RegisterProductRoutes(app *fiber.App, db *gorm.DB) {
 	store := app.Group("/api/stores/:storeId",
 		middleware.RequireAuth(),
 		middleware.TenantDB(),
+		middleware.EnsureStoreContextMatches("storeId"),
 	)
 	registerSearch(store, db)
 	registerProducts(store, db, imageUploadSvc, maxImageSizeMB)
@@ -47,9 +49,9 @@ func registerCatalog(store fiber.Router, db *gorm.DB) {
 	importExportHandler := handlers.NewImportExportHandler(repo.NewProductRepository(), nil, 0)
 
 	g := store.Group("/catalog")
-	g.Get("/export", importExportHandler.ExportFullCatalog)
-	g.Delete("/purge", importExportHandler.PurgeCatalog)
-	g.Get("/duplicates", importExportHandler.FindDuplicates)
+	g.Get("/export", middleware.RequirePermission(membershipModels.PermProductsImportExport), importExportHandler.ExportFullCatalog)
+	g.Delete("/purge", middleware.RequirePermission(membershipModels.PermProductsDelete), importExportHandler.PurgeCatalog)
+	g.Get("/duplicates", middleware.RequirePermission(membershipModels.PermProductsEdit), importExportHandler.FindDuplicates)
 }
 
 func registerProducts(store fiber.Router, db *gorm.DB, imageUploadSvc services.ProductImageUploadService, maxImageSizeMB int64) {
@@ -68,22 +70,22 @@ func registerProducts(store fiber.Router, db *gorm.DB, imageUploadSvc services.P
 	g := store.Group("/products")
 
 	// Import/Export (static routes first)
-	g.Get("/export", importExportHandler.ExportProducts)
-	g.Post("/import", importExportHandler.ImportProducts)
-	g.Get("/import/template", importExportHandler.ProductImportTemplate)
+	g.Get("/export", middleware.RequirePermission(membershipModels.PermProductsImportExport), importExportHandler.ExportProducts)
+	g.Post("/import", middleware.RequirePermission(membershipModels.PermProductsImportExport), importExportHandler.ImportProducts)
+	g.Get("/import/template", middleware.RequirePermission(membershipModels.PermProductsImportExport), importExportHandler.ProductImportTemplate)
 
 	// CRUD
-	g.Post("/", productHandler.Create)
+	g.Post("/", middleware.RequirePermission(membershipModels.PermProductsCreate), productHandler.Create)
 	g.Get("/", productHandler.GetAll)
 	g.Get("/:id", productHandler.GetByID)
 	relationHandler := handlers.NewProductRelationHandler()
 	g.Get("/:id/relations", relationHandler.GetByProduct)
-	g.Put("/:id", productHandler.Update)
-	g.Put("/:id/relations", relationHandler.ReplaceForProduct)
-	g.Delete("/:id", productHandler.Delete)
-	g.Post("/:id/clone", productHandler.Clone)
-	g.Post("/:id/stock/adjust", productHandler.AdjustStock)
-	g.Post("/:id/stock/reserve", productHandler.ReserveStock)
+	g.Put("/:id", middleware.RequirePermission(membershipModels.PermProductsEdit), productHandler.Update)
+	g.Put("/:id/relations", middleware.RequirePermission(membershipModels.PermProductsEdit), relationHandler.ReplaceForProduct)
+	g.Delete("/:id", middleware.RequirePermission(membershipModels.PermProductsDelete), productHandler.Delete)
+	g.Post("/:id/clone", middleware.RequirePermission(membershipModels.PermProductsCreate), productHandler.Clone)
+	g.Post("/:id/stock/adjust", middleware.RequirePermission(membershipModels.PermProductsEdit), productHandler.AdjustStock)
+	g.Post("/:id/stock/reserve", middleware.RequirePermission(membershipModels.PermProductsEdit), productHandler.ReserveStock)
 }
 
 func registerCategories(store fiber.Router, db *gorm.DB) {
@@ -93,16 +95,16 @@ func registerCategories(store fiber.Router, db *gorm.DB) {
 	g := store.Group("/categories")
 
 	// Import/Export (static routes first)
-	g.Get("/export", importExportHandler.ExportCategories)
-	g.Post("/import", importExportHandler.ImportCategories)
-	g.Get("/import/template", importExportHandler.CategoryImportTemplate)
+	g.Get("/export", middleware.RequirePermission(membershipModels.PermProductsImportExport), importExportHandler.ExportCategories)
+	g.Post("/import", middleware.RequirePermission(membershipModels.PermProductsImportExport), importExportHandler.ImportCategories)
+	g.Get("/import/template", middleware.RequirePermission(membershipModels.PermProductsImportExport), importExportHandler.CategoryImportTemplate)
 
 	// CRUD
-	g.Post("/", h.Create)
+	g.Post("/", middleware.RequirePermission(membershipModels.PermCategoriesManage), h.Create)
 	g.Get("/", h.GetTree)
 	g.Get("/:id", h.GetByID)
-	g.Put("/:id", h.Update)
-	g.Delete("/:id", h.Delete)
+	g.Put("/:id", middleware.RequirePermission(membershipModels.PermCategoriesManage), h.Update)
+	g.Delete("/:id", middleware.RequirePermission(membershipModels.PermCategoriesManage), h.Delete)
 }
 
 func registerCollections(store fiber.Router, db *gorm.DB) {
@@ -112,30 +114,30 @@ func registerCollections(store fiber.Router, db *gorm.DB) {
 	g := store.Group("/collections")
 
 	// Import/Export (static routes first)
-	g.Get("/export", importExportHandler.ExportCollections)
-	g.Post("/import", importExportHandler.ImportCollections)
-	g.Get("/import/template", importExportHandler.CollectionImportTemplate)
+	g.Get("/export", middleware.RequirePermission(membershipModels.PermProductsImportExport), importExportHandler.ExportCollections)
+	g.Post("/import", middleware.RequirePermission(membershipModels.PermProductsImportExport), importExportHandler.ImportCollections)
+	g.Get("/import/template", middleware.RequirePermission(membershipModels.PermProductsImportExport), importExportHandler.CollectionImportTemplate)
 
 	// CRUD
-	g.Post("/", collectionHandler.Create)
+	g.Post("/", middleware.RequirePermission(membershipModels.PermCollectionsManage), collectionHandler.Create)
 	g.Get("/", collectionHandler.GetAll)
 	g.Get("/:id", collectionHandler.GetByID)
-	g.Put("/:id", collectionHandler.Update)
-	g.Delete("/:id", collectionHandler.Delete)
+	g.Put("/:id", middleware.RequirePermission(membershipModels.PermCollectionsManage), collectionHandler.Update)
+	g.Delete("/:id", middleware.RequirePermission(membershipModels.PermCollectionsManage), collectionHandler.Delete)
 	g.Get("/:id/products", collectionHandler.GetProducts)
-	g.Post("/:id/products/:productId", collectionHandler.AddProduct)
-	g.Delete("/:id/products/:productId", collectionHandler.RemoveProduct)
+	g.Post("/:id/products/:productId", middleware.RequirePermission(membershipModels.PermCollectionsManage), collectionHandler.AddProduct)
+	g.Delete("/:id/products/:productId", middleware.RequirePermission(membershipModels.PermCollectionsManage), collectionHandler.RemoveProduct)
 }
 
 func registerImages(store fiber.Router, db *gorm.DB, storage media.Storage, imageUploadSvc services.ProductImageUploadService) {
 	imageHandler := handlers.NewImageHandler(imageUploadSvc, storage)
 
 	g := store.Group("/products/:productId/images")
-	g.Post("/", imageHandler.Create)
+	g.Post("/", middleware.RequirePermission(membershipModels.PermStoreMediaUpload), imageHandler.Create)
 	g.Get("/", imageHandler.GetByProductID)
-	g.Put("/:imageId", imageHandler.Update)
-	g.Delete("/:imageId", imageHandler.Delete)
-	g.Post("/reorder", imageHandler.Reorder)
+	g.Put("/:imageId", middleware.RequirePermission(membershipModels.PermStoreMediaUpload), imageHandler.Update)
+	g.Delete("/:imageId", middleware.RequirePermission(membershipModels.PermStoreMediaUpload), imageHandler.Delete)
+	g.Post("/reorder", middleware.RequirePermission(membershipModels.PermStoreMediaUpload), imageHandler.Reorder)
 }
 
 func resolveMaxImageUploadSizeMB() int64 {
@@ -160,15 +162,15 @@ func registerTags(store fiber.Router, db *gorm.DB) {
 	g.Get("/import/template", importExportHandler.TagImportTemplate)
 
 	// CRUD
-	g.Post("/", h.Create)
+	g.Post("/", middleware.RequirePermission(membershipModels.PermTagsManage), h.Create)
 	g.Get("/", h.GetAll)
 	g.Get("/:id", h.GetByID)
-	g.Put("/:id", h.Update)
-	g.Delete("/:id", h.Delete)
+	g.Put("/:id", middleware.RequirePermission(membershipModels.PermTagsManage), h.Update)
+	g.Delete("/:id", middleware.RequirePermission(membershipModels.PermTagsManage), h.Delete)
 
 	// Assign tags to product
 	g = store.Group("/products/:productId/tags")
-	g.Post("/", h.AssignToProduct)
+	g.Post("/", middleware.RequirePermission(membershipModels.PermTagsManage), h.AssignToProduct)
 }
 
 func registerSearch(store fiber.Router, db *gorm.DB) {

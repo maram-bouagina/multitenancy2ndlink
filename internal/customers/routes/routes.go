@@ -6,6 +6,7 @@ import (
 	"multitenancypfe/internal/customers/handlers"
 	"multitenancypfe/internal/customers/repo"
 	"multitenancypfe/internal/customers/services"
+	membershipModels "multitenancypfe/internal/membership/models"
 	"multitenancypfe/internal/middleware"
 	sfHandlers "multitenancypfe/internal/storefront/handlers"
 )
@@ -41,14 +42,15 @@ func RegisterCustomerRoutes(app *fiber.App) {
 	admin := app.Group("/api/stores/:storeId/customers",
 		middleware.RequireAuth(),
 		middleware.TenantDB(),
+		middleware.EnsureStoreContextMatches("storeId"),
 	)
-	admin.Get("/export", importExportHandler.ExportCustomers)
-	admin.Post("/import", importExportHandler.ImportCustomers)
-	admin.Get("/import/template", importExportHandler.CustomerImportTemplate)
-	admin.Get("/", adminHandler.List)
-	admin.Get("/:id", adminHandler.GetByID)
-	admin.Put("/:id", adminHandler.Update)
-	admin.Delete("/:id", adminHandler.Delete)
+	admin.Get("/export", middleware.RequirePermission(membershipModels.PermCustomersImportExport), importExportHandler.ExportCustomers)
+	admin.Post("/import", middleware.RequirePermission(membershipModels.PermCustomersImportExport), importExportHandler.ImportCustomers)
+	admin.Get("/import/template", middleware.RequirePermission(membershipModels.PermCustomersImportExport), importExportHandler.CustomerImportTemplate)
+	admin.Get("/", middleware.RequirePermission(membershipModels.PermCustomersView), adminHandler.List)
+	admin.Get("/:id", middleware.RequirePermission(membershipModels.PermCustomersView), adminHandler.GetByID)
+	admin.Put("/:id", middleware.RequirePermission(membershipModels.PermCustomersEdit), adminHandler.Update)
+	admin.Delete("/:id", middleware.RequirePermission(membershipModels.PermCustomersDelete), adminHandler.Delete)
 
 	// ── Admin customer groups routes ─────────────────────────────────────────
 	groupRepo := repo.NewCustomerGroupRepo()
@@ -57,15 +59,16 @@ func RegisterCustomerRoutes(app *fiber.App) {
 	groups := app.Group("/api/stores/:storeId/customer-groups",
 		middleware.RequireAuth(),
 		middleware.TenantDB(),
+		middleware.EnsureStoreContextMatches("storeId"),
 	)
-	groups.Get("/export", importExportHandler.ExportCustomerGroups)
-	groups.Post("/import", importExportHandler.ImportCustomerGroups)
-	groups.Get("/import/template", importExportHandler.CustomerGroupImportTemplate)
-	groups.Get("/", groupHandler.List)
-	groups.Post("/", groupHandler.Create)
-	groups.Get("/:id", groupHandler.GetByID)
-	groups.Put("/:id", groupHandler.Update)
-	groups.Delete("/:id", groupHandler.Delete)
-	groups.Post("/:id/members", groupHandler.AddMembers)
-	groups.Delete("/:id/members", groupHandler.RemoveMembers)
+	groups.Get("/export", middleware.RequirePermission(membershipModels.PermCustomersImportExport), importExportHandler.ExportCustomerGroups)
+	groups.Post("/import", middleware.RequirePermission(membershipModels.PermCustomersImportExport), importExportHandler.ImportCustomerGroups)
+	groups.Get("/import/template", middleware.RequirePermission(membershipModels.PermCustomersImportExport), importExportHandler.CustomerGroupImportTemplate)
+	groups.Get("/", middleware.RequirePermission(membershipModels.PermCustomersView), groupHandler.List)
+	groups.Post("/", middleware.RequirePermission(membershipModels.PermCustomersEdit), groupHandler.Create)
+	groups.Get("/:id", middleware.RequirePermission(membershipModels.PermCustomersView), groupHandler.GetByID)
+	groups.Put("/:id", middleware.RequirePermission(membershipModels.PermCustomersEdit), groupHandler.Update)
+	groups.Delete("/:id", middleware.RequirePermission(membershipModels.PermCustomersDelete), groupHandler.Delete)
+	groups.Post("/:id/members", middleware.RequirePermission(membershipModels.PermCustomersEdit), groupHandler.AddMembers)
+	groups.Delete("/:id/members", middleware.RequirePermission(membershipModels.PermCustomersEdit), groupHandler.RemoveMembers)
 }

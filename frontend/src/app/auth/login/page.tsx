@@ -26,7 +26,7 @@ function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const message = searchParams.get('message');
-  const callbackURL = searchParams.get('callbackURL') || '/dashboard';
+  const callbackURL = searchParams.get('callbackURL') || '/dashboard/space';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

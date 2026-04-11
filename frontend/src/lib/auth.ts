@@ -81,7 +81,7 @@ export const auth = betterAuth({
       },
       role: {
         type: "string",
-        defaultValue: "merchant",
+        defaultValue: "staff",
         input: true,
       },
       userStatus: {
@@ -106,8 +106,7 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24, // 24 hours
     updateAge: 60 * 60, // update session every hour
     cookieCache: {
-      enabled: true,
-      maxAge: 5 * 60, // 5 minutes
+      enabled: false,
     },
   },
 
@@ -149,8 +148,8 @@ export const auth = betterAuth({
                   ]
                 );
               }
-            } else {
-              // Merchant — sync to tenants table
+            } else if (user.role === "merchant" || user.role === "admin") {
+              // Tenant-capable account — sync to tenants table
               await pool.query(
                 `INSERT INTO public.tenants (id, email, password_hash, first_name, last_name, phone, plan, status, email_verified, created_at, updated_at)
                  VALUES ($1, $2, 'better-auth-managed', $3, $4, $5, $6, 'active', false, NOW(), NOW())

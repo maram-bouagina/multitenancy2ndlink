@@ -10,7 +10,7 @@ import { useAuth } from '@/lib/hooks/use-auth';
 import { useLanguage } from '@/lib/hooks/use-language';
 
 export default function DashboardPage() {
-  const { currentStore, stores, isLoading } = useAuth();
+  const { currentStore, stores, myStores, isLoading } = useAuth();
   const { t } = useLanguage();
   const storeId = currentStore?.id ?? '';
 
@@ -59,15 +59,9 @@ export default function DashboardPage() {
   }
 
   if (!currentStore) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-4">
-        <h2 className="text-xl font-semibold">{t.dashboard.noStoreTitle}</h2>
-        <p className="text-gray-600 text-center max-w-md">{t.dashboard.noStoreDesc}</p>
-        <Button asChild>
-          <Link href="/dashboard/stores">{t.dashboard.manageStores}</Link>
-        </Button>
-      </div>
-    );
+    // The layout's useEffect will handle the redirect to /dashboard/space.
+    // Render nothing while that redirect fires to avoid a flash of no-store UI.
+    return null;
   }
 
   return (

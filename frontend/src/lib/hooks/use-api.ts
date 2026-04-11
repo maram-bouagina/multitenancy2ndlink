@@ -801,3 +801,117 @@ export function useDeletePage() {
     onSuccess: (_, { storeId }) => qc.invalidateQueries({ queryKey: ['pages', storeId] }),
   })
 }
+
+// ── Membership hooks ─────────────────────────────────────────────────────────
+
+export function useStoreMembers(storeId: string | undefined) {
+  return useQuery({
+    queryKey: ['members', storeId],
+    queryFn: () => apiClient.getStoreMembers(storeId!),
+    enabled: !!storeId,
+  });
+}
+
+export function useStoreInvitations(storeId: string | undefined) {
+  return useQuery({
+    queryKey: ['invitations', storeId],
+    queryFn: () => apiClient.getStoreInvitations(storeId!),
+    enabled: !!storeId,
+  });
+}
+
+export function useCreateInvitation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId, data }: { storeId: string; data: import('@/lib/types').CreateInvitationRequest }) =>
+      apiClient.createInvitation(storeId, data),
+    onSuccess: (_, { storeId }) => qc.invalidateQueries({ queryKey: ['invitations', storeId] }),
+  });
+}
+
+export function useRevokeInvitation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ invitationId, storeId }: { invitationId: string; storeId: string }) =>
+      apiClient.revokeInvitation(invitationId),
+    onSuccess: (_, { storeId }) => qc.invalidateQueries({ queryKey: ['invitations', storeId] }),
+  });
+}
+
+export function useUpdateMemberRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId, memberId, data }: { storeId: string; memberId: string; data: import('@/lib/types').UpdateMemberRoleRequest }) =>
+      apiClient.updateMemberRole(storeId, memberId, data),
+    onSuccess: (_, { storeId }) => qc.invalidateQueries({ queryKey: ['members', storeId] }),
+  });
+}
+
+// ── Role hooks ───────────────────────────────────────────────────────────────
+
+export function useStoreRoles(storeId: string | undefined) {
+  return useQuery({
+    queryKey: ['roles', storeId],
+    queryFn: () => apiClient.getStoreRoles(storeId!),
+    enabled: !!storeId,
+  });
+}
+
+export function useCreateRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId, data }: { storeId: string; data: import('@/lib/types').CreateRoleRequest }) =>
+      apiClient.createRole(storeId, data),
+    onSuccess: (_, { storeId }) => qc.invalidateQueries({ queryKey: ['roles', storeId] }),
+  });
+}
+
+export function useUpdateRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId, roleId, data }: { storeId: string; roleId: string; data: import('@/lib/types').UpdateRoleRequest }) =>
+      apiClient.updateRole(storeId, roleId, data),
+    onSuccess: (_, { storeId }) => qc.invalidateQueries({ queryKey: ['roles', storeId] }),
+  });
+}
+
+export function useDeleteRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId, roleId }: { storeId: string; roleId: string }) =>
+      apiClient.deleteRole(storeId, roleId),
+    onSuccess: (_, { storeId }) => qc.invalidateQueries({ queryKey: ['roles', storeId] }),
+  });
+}
+
+export function useRemoveMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ storeId, memberId }: { storeId: string; memberId: string }) =>
+      apiClient.removeMember(storeId, memberId),
+    onSuccess: (_, { storeId }) => qc.invalidateQueries({ queryKey: ['members', storeId] }),
+  });
+}
+
+export function useAcceptInvitation() {
+  return useMutation({
+    mutationFn: ({ token, profile }: { token: string; profile?: import('@/lib/types').AcceptInvitationWithProfileRequest }) =>
+      apiClient.acceptInvitation(token, profile),
+    // returns { message, store_id }
+  });
+}
+
+// ── Permission helper hook ────────────────────────────────────────────────────
+
+/**
+ * Returns whether the current user has a given permission in the current store.
+ * Always returns true for the owner (role === 'owner').
+ */
+export function useHasPermission(storeId: string | undefined, userId: string | undefined, permission: import('@/lib/types').Permission): boolean {
+  const { data } = useStoreMembers(storeId);
+  if (!data?.members || !userId) return false;
+  const me = data.members.find((m) => m.user_id === userId);
+  if (!me) return false;
+  if (me.role === 'owner') return true;
+  return me.permissions?.includes(permission) ?? false;
+}
